@@ -113,6 +113,48 @@ class TestManualOverride(unittest.TestCase):
         for t in tickets:
             self.assertFalse(set(t) & forbidden, f"tail leak {t}")
 
+    def test_manual_excluded_numbers(self):
+        excluded = [13, 21, 34, 42, 47]
+        tickets, _ = generate_tickets(
+            history_draws=HISTORY,
+            num_tickets=10,
+            manual_keys=[7],
+            manual_excluded_numbers=excluded,
+            rng=random.Random(11),
+        )
+        self.assertGreater(len(tickets), 0)
+        forbidden = set(excluded)
+        for t in tickets:
+            self.assertFalse(set(t) & forbidden, f"excluded number leaked: {t}")
+            self.assertIn(7, t)
+
+    def test_manual_excluded_numbers_conflict_with_key(self):
+        with self.assertRaises(ValueError):
+            generate_tickets(
+                history_draws=HISTORY,
+                num_tickets=5,
+                manual_keys=[7, 33],
+                manual_excluded_numbers=[33],
+            )
+
+    def test_manual_excluded_numbers_out_of_range(self):
+        with self.assertRaises(ValueError):
+            generate_tickets(
+                history_draws=HISTORY,
+                num_tickets=5,
+                manual_keys=[7],
+                manual_excluded_numbers=[50],
+            )
+
+    def test_manual_excluded_numbers_duplicates(self):
+        with self.assertRaises(ValueError):
+            generate_tickets(
+                history_draws=HISTORY,
+                num_tickets=5,
+                manual_keys=[7],
+                manual_excluded_numbers=[13, 13],
+            )
+
 
 class TestEdgeCases(unittest.TestCase):
     def test_empty_history_rejected(self):
