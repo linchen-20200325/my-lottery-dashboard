@@ -23,19 +23,19 @@
 - 針對同一個報錯，若連續重試 2 次未果，**立即停機**。
 - 啟動除錯協議，並交由我詢問其他 AI 進行雙重驗證。
 
-## §6 大樂透量化選號專案治理協定 v2.0 (Domain Protocol)
-- **系統定位**：6/49 實務選號產生器；承認獨立隨機 EV<0；不預測，僅壓縮包牌成本、過濾常態尾部劣質組合。
-- **絕對禁忌**：禁止在 live picker 引入任何歷史開獎資料庫；每次執行僅依賴 `t-1` 輸入（`previous_draw / exclude_tails / key_nums / drag_nums / num_tickets / seed`）。**離線分析模組例外**（`src.scraper`、`src.analytics.backtest`），但禁止被 `streamlit_app.py` import。
-- **演算法四階段**（順序不可變）：
-  1. **Pool Reduction**：`pool = {1..49} − previous_draw − {n : n%10 ∈ exclude_tails}`
-  2. **Pillar & Drag**：`drag_candidates = (drag_nums ∩ pool) − key_nums`；膽碼具絕對優先權，強制合併入每注。
+## §6 大樂透動態量化選號專案治理協定 v3.0 (Domain Protocol)
+- **系統定位**：6/49 實務選號產生器；承認獨立隨機 EV<0；引入「動能（熱碼連莊）」與「均值回歸（冷碼破冰）」雙信號優化選號池，不預測號碼。
+- **資料原則 (v3.0 §3「果斷棄爬」)**：歷史資料以「**倉庫內附 CSV → UI 手動上傳 → 離線 scraper 補檔**」三層備援；如自動抓取受 anti-bot 阻擋即切手動，不再死磕爬蟲。Streamlit Cloud 端**不發起外部 API 呼叫**，所有歷史資料來自倉庫 `data/lotto649.csv` 或使用者上傳。
+- **演算法五階段**（順序不可變）：
+  1. **Historical Data Engine**：`src/generator/history_engine.analyze()` 計算 1-49 各號遺漏期數並分層為「熱(0-2)/溫(3-14)/冷(≥15)」，閾值由 UI 滑桿可調；同時計算近 N 期尾數頻率，得出「過熱尾數 ∪ 死寂尾數 = `exclude_tails`」。
+  2. **Pool + Dynamic 雙膽**：`pool = {1..49} − tails(exclude_tails)`；動態定膽 = 隨機抽 1 顆熱 + 1 顆冷（`auto_keys`）；使用者可手動覆寫 `manual_keys` / `manual_excluded_tails`。
   3. **Matrix Shuffling**：`rng = random.Random(seed) if seed else random.Random()`；`random.shuffle(list(combinations(drag, 6−len(key))))`
-  4. **五大濾網**（達 `num_tickets` 即 `break`）：
+  4. **五大濾網**：
      - 和值 `120 ≤ sum ≤ 180`
      - 奇數數量 `∈ {2,3,4}`
      - 大數(>31)`≥ 3`
-     - **質數濾網**：`PRIMES_SET = {2,3,5,7,11,13,17,19,23,29,31,37,41,43,47}`，`1 ≤ prime_count ≤ 3`
-     - **連號濾網**：相鄰差 = 1 的對數 `≤ 2`
-- **依賴限制**：核心生成器 `src.generator.lotto_picker` 僅限 `random` + `itertools`（禁 `pandas` / `numpy`）；Streamlit、`math.comb`（in `src.analytics.cost_calc`）為周邊例外。
-- **防呆**：膽碼必須 1-5 顆、拖碼足量、無重複、值域 1-49；不符即拋 `ValueError`。
+     - 質數 `1 ≤ prime_count ≤ 3`（`PRIMES_SET = {2,3,5,7,11,13,17,19,23,29,31,37,41,43,47}`）
+     - 連號對數 `≤ 2`
+- **依賴限制**：核心引擎 `src.generator.*` 限 `random` + `itertools` + `collections`（禁 `pandas` / `numpy`）；Streamlit、`math.comb`、`taiwanlottery`（離線抓檔用）為周邊例外。
+- **防呆**：膽碼 1-5 顆、拖碼足量、無重複、值域 1-49、歷史非空且每列 6 顆合法號碼；不符即拋 `ValueError`。
 - **自我審核交付**：寫碼後輸出 5 段報告 → 邏輯審查 / 邊界 / 效能 / Debug / 最終代碼。
