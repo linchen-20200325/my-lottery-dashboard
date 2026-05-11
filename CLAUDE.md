@@ -23,19 +23,26 @@
 - 針對同一個報錯，若連續重試 2 次未果，**立即停機**。
 - 啟動除錯協議，並交由我詢問其他 AI 進行雙重驗證。
 
-## §6 大樂透動態量化選號專案治理協定 v3.0 (Domain Protocol)
-- **系統定位**：6/49 實務選號產生器；承認獨立隨機 EV<0；引入「動能（熱碼連莊）」與「均值回歸（冷碼破冰）」雙信號優化選號池，不預測號碼。
-- **資料原則 (v3.0 §3「果斷棄爬」)**：歷史資料以「**倉庫內附 CSV → UI 手動上傳 → 離線 scraper 補檔**」三層備援；如自動抓取受 anti-bot 阻擋即切手動，不再死磕爬蟲。Streamlit Cloud 端**不發起外部 API 呼叫**，所有歷史資料來自倉庫 `data/lotto649.csv` 或使用者上傳。
+## §6 大樂透量化訊號與系統防禦架構 v5.0 (Domain Protocol)
+- **系統定位**：訊號驅動 (Signal-Driven) + 容錯架構 (Defensive Architecture) + 效能優先 (Performance First)。承認 EV<0；不預測；以動態訊號 + 五大濾網雙層處理。
+- **資料原則 v3.0 §3「果斷棄爬」**：歷史資料來源「**倉庫內附 CSV → UI 上傳 → 離線 scraper 補檔**」三層備援。Streamlit Cloud 端**不發外部 API**。
 - **演算法五階段**（順序不可變）：
-  1. **Historical Data Engine**：`src/generator/history_engine.analyze()` 計算 1-49 各號遺漏期數並分層為「熱(0-2)/溫(3-14)/冷(≥15)」，閾值由 UI 滑桿可調；同時計算近 N 期尾數頻率，得出「過熱尾數 ∪ 死寂尾數 = `exclude_tails`」。
-  2. **Pool + Dynamic 雙膽**：`pool = {1..49} − tails(exclude_tails)`；動態定膽 = 隨機抽 1 顆熱 + 1 顆冷（`auto_keys`）；使用者可手動覆寫 `manual_keys` / `manual_excluded_tails`。
-  3. **Matrix Shuffling**：`rng = random.Random(seed) if seed else random.Random()`；`random.shuffle(list(combinations(drag, 6−len(key))))`
-  4. **五大濾網**：
-     - 和值 `120 ≤ sum ≤ 180`
-     - 奇數數量 `∈ {2,3,4}`
-     - 大數(>31)`≥ 3`
+  1. **Phase 1 — 動態訊號生成**：`history_engine.analyze()` 計算 1-49 各號遺漏期數，求 μ / σ（σ 下限 `max(1.0, std)`），Z-Score 分層：
+     - 熱碼：gap ≤ `max(2, μ - 0.5σ)`（floor 由 UI 可調）
+     - 冷碼：gap ≥ `μ + 1.5σ`
+     - 動態和值：`SMA(近 10 期)` ± 30，clamp 至 `[90, 210]`
+     - 過熱尾數：近 3 期 ≥ 4 次；死寂尾數：近 10 期未出
+  2. **Phase 2 — Cache + 優雅降級**：
+     - 載入 + 分析必須包 `@st.cache_data(ttl=3600)`
+     - try/except 接住所有失敗，UI swap 至 `STATIC_FALLBACK_ANALYSIS`（sum 120-180、無冷熱、無排除），`st.warning` 但不中斷
+  3. **Phase 3 — Matrix Shuffling**：`rng = random.Random(seed) if seed else random.Random()`；`random.shuffle(list(combinations(drag, 6−len(key))))`
+  4. **Phase 4 — 五大濾網**（達 `num_tickets` 即 break）：
      - 質數 `1 ≤ prime_count ≤ 3`（`PRIMES_SET = {2,3,5,7,11,13,17,19,23,29,31,37,41,43,47}`）
      - 連號對數 `≤ 2`
-- **依賴限制**：核心引擎 `src.generator.*` 限 `random` + `itertools` + `collections`（禁 `pandas` / `numpy`）；Streamlit、`math.comb`、`taiwanlottery`（離線抓檔用）為周邊例外。
-- **防呆**：膽碼 1-5 顆、拖碼足量、無重複、值域 1-49、歷史非空且每列 6 顆合法號碼；不符即拋 `ValueError`。
+     - 動態和值（Phase 1 區間，或 fallback `120-180`）
+     - 奇數數量 `∈ {2,3,4}`
+     - 大數 (>31) `≥ 3`
+- **回測指標 §3**：`src/analytics/metrics.py` 提供 `compression_rate()`（C(49,6)≈14M 經五大濾網後存活率）與 `survival_rate(csv)`（過去開獎被濾網殺率）；新增/調整濾網時必須兩指標同時審視，避免 over-fitting。
+- **依賴限制**：核心引擎 `src.generator.*` 限 `random` + `itertools` + `collections` + `statistics`（禁 `pandas` / `numpy`）；Streamlit、`math.comb`、`taiwanlottery` 為周邊例外。
+- **防呆**：歷史非空且每列 6 顆合法號碼、膽碼 1-5 顆、拖碼足量、無重複、值域 1-49；不符即拋 `ValueError`，UI 端必須 `try/except` 接住。
 - **自我審核交付**：寫碼後輸出 5 段報告 → 邏輯審查 / 邊界 / 效能 / Debug / 最終代碼。

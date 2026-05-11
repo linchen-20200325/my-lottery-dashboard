@@ -1,14 +1,17 @@
-"""Lotto 6/49 dynamic ticket generator (v3.0, 5-phase model).
+"""Lotto 6/49 dynamic ticket generator (v5.0).
 
 Pipeline:
-    Phase 1  Historical analysis  : delegate to history_engine.analyze()
-    Phase 2  Pool + dynamic 雙膽    : exclude_tails ← analysis (or manual),
-                                     key_nums ← auto_keys (or manual)
-    Phase 3  Matrix shuffling      : random.shuffle(list(combinations(...)))
-    Phase 4  Five filters          : sum 120-180, odd ∈ {2,3,4}, big(>31) ≥ 3,
-                                     prime ∈ [1,3], consecutive_pairs ≤ 2
+    Phase 1  Dynamic signals    : delegate to history_engine.analyze()
+                                  (Z-Score gap layering + SMA sum range)
+    Phase 2  Pool + 雙膽        : exclude_tails ← analysis (or manual),
+                                  key_nums ← auto_keys (or manual)
+    Phase 3  Matrix shuffling   : random.shuffle(list(combinations(...)))
+    Phase 4  Five filters       : prime ∈ [1,3], consec_pairs ≤ 2,
+                                  sum ∈ analysis.sum_min/max_dynamic
+                                  (or manual_sum_range), odd ∈ {2,3,4},
+                                  big(>31) ≥ 3
 
-Stdlib only: `random` + `itertools` (+ `collections` via history_engine).
+Stdlib only: `random` + `itertools` (+ `collections`/`statistics` via engine).
 """
 
 from __future__ import annotations
@@ -22,11 +25,14 @@ from src.generator.history_engine import (
     HistoryAnalysis,
     POOL_MAX,
     POOL_MIN,
+    STATIC_SUM_MAX,
+    STATIC_SUM_MIN,
     TICKET_SIZE,
     analyze,
 )
 
-SUM_MIN, SUM_MAX = 120, 180
+# Static fallback sum range (used when history unavailable; v5.0 §2)
+SUM_MIN, SUM_MAX = STATIC_SUM_MIN, STATIC_SUM_MAX
 ALLOWED_ODD_COUNTS: frozenset = frozenset({2, 3, 4})
 BIG_THRESHOLD = 31
 MIN_BIG_COUNT = 3
@@ -82,20 +88,29 @@ def generate_tickets(
     history_draws: Sequence[Sequence[int]],
     num_tickets: int = 5,
     *,
-    hot_max_gap: int = DEFAULTS["hot_max_gap"],
-    warm_max_gap: int = DEFAULTS["warm_max_gap"],
+    # Z-Score gap layering (v5.0)
+    hot_sigma_factor: float = DEFAULTS["hot_sigma_factor"],
+    cold_sigma_factor: float = DEFAULTS["cold_sigma_factor"],
+    # Dynamic sum range (v5.0)
+    sum_sma_window: int = DEFAULTS["sum_sma_window"],
+    sum_range_pad: int = DEFAULTS["sum_range_pad"],
+    # Tail signals
     overheat_recent_periods: int = DEFAULTS["overheat_recent_periods"],
     overheat_min_count: int = DEFAULTS["overheat_min_count"],
     dormant_periods: int = DEFAULTS["dormant_periods"],
+    # Manual overrides (UI fallback per §3)
     manual_keys: Iterable[int] | None = None,
     manual_excluded_tails: Iterable[int] | None = None,
+    manual_sum_range: tuple[int, int] | None = None,
+    # Pre-computed analysis (UI passes a cached analysis to avoid re-running)
+    precomputed_analysis: HistoryAnalysis | None = None,
     rng: random.Random | None = None,
 ) -> tuple[list[tuple[int, ...]], HistoryAnalysis]:
-    """Produce up to `num_tickets` 6-number combinations + analysis snapshot.
+    """Produce up to `num_tickets` filtered combinations + analysis snapshot.
 
-    `manual_keys` / `manual_excluded_tails`, when provided, supersede the
-    dynamic values from `history_engine.analyze()`. This is the UI "manual
-    override" surface that satisfies v3.0 §3 manual-fallback requirement.
+    Manual overrides — when provided — supersede dynamic signals; this is the
+    surface that v5.0 §2 graceful-degradation path uses (UI substitutes
+    STATIC_FALLBACK_ANALYSIS via `precomputed_analysis`).
 
     Raises ValueError on invalid input or unsatisfiable configuration.
     """
@@ -108,16 +123,21 @@ def generate_tickets(
 
     rng = rng if rng is not None else random.Random()
 
-    # --- Phase 1: historical analysis ---
-    analysis = analyze(
-        draws=history_draws,
-        hot_max_gap=hot_max_gap,
-        warm_max_gap=warm_max_gap,
-        overheat_recent_periods=overheat_recent_periods,
-        overheat_min_count=overheat_min_count,
-        dormant_periods=dormant_periods,
-        rng=rng,
-    )
+    # --- Phase 1: dynamic signals ---
+    if precomputed_analysis is not None:
+        analysis = precomputed_analysis
+    else:
+        analysis = analyze(
+            draws=history_draws,
+            hot_sigma_factor=hot_sigma_factor,
+            cold_sigma_factor=cold_sigma_factor,
+            sum_sma_window=sum_sma_window,
+            sum_range_pad=sum_range_pad,
+            overheat_recent_periods=overheat_recent_periods,
+            overheat_min_count=overheat_min_count,
+            dormant_periods=dormant_periods,
+            rng=rng,
+        )
 
     # --- Phase 2: pool + dynamic 雙膽 ---
     if manual_excluded_tails is not None:
@@ -162,10 +182,19 @@ def generate_tickets(
     rng.shuffle(all_combos)
 
     # --- Phase 4: five filters ---
+    if manual_sum_range is not None:
+        s_lo, s_hi = manual_sum_range
+        if not (isinstance(s_lo, int) and isinstance(s_hi, int)):
+            raise ValueError("manual_sum_range must be (int, int)")
+        if s_lo > s_hi:
+            raise ValueError("manual_sum_range lo must be <= hi")
+    else:
+        s_lo, s_hi = analysis.sum_min_dynamic, analysis.sum_max_dynamic
+
     results: list[tuple[int, ...]] = []
     for combo in all_combos:
         ticket = tuple(sorted(key_set.union(combo)))
-        if not (SUM_MIN <= sum(ticket) <= SUM_MAX):
+        if not (s_lo <= sum(ticket) <= s_hi):
             continue
         odd_count = sum(1 for n in ticket if n % 2 == 1)
         if odd_count not in ALLOWED_ODD_COUNTS:
