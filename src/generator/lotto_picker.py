@@ -1,4 +1,4 @@
-"""Lotto 6/49 quantitative ticket generator (4-phase filter model).
+"""Lotto 6/49 quantitative ticket generator (4-phase filter model, v2.0).
 
 Stdlib-only by design (no pandas/numpy). Each call is stateless and depends
 solely on t-1 inputs — no historical database is consulted.
@@ -7,7 +7,8 @@ Pipeline:
     Phase 1  Pool reduction   : universe = {1..49} \\ previous_draw \\ tail_matches
     Phase 2  Pillar & drag    : enforce key_nums; drag = (drag_nums ∩ pool) - key_nums
     Phase 3  Matrix shuffling : random.shuffle(list(combinations(drag, needed)))
-    Phase 4  Filters          : sum 120-180, odd_count ∈ {2,3,4}, big(>31)_count ≥ 3
+    Phase 4  Filters          : sum 120-180, odd ∈ {2,3,4}, big(>31) ≥ 3,
+                                prime_count ∈ [1,3], consecutive_pairs ≤ 2
 """
 
 from __future__ import annotations
@@ -24,6 +25,13 @@ BIG_THRESHOLD = 31
 MIN_BIG_COUNT = 3
 MAX_KEY_NUMS = 5
 MIN_KEY_NUMS = 1
+
+PRIMES_SET: frozenset[int] = frozenset(
+    {2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47}
+)
+MIN_PRIME_COUNT = 1
+MAX_PRIME_COUNT = 3
+MAX_CONSECUTIVE_PAIRS = 2
 
 
 # --- Validation ---------------------------------------------------------------
@@ -135,6 +143,14 @@ def generate_tickets(
             continue
         if sum(1 for n in ticket if n > BIG_THRESHOLD) < MIN_BIG_COUNT:
             continue
+        prime_count = sum(1 for n in ticket if n in PRIMES_SET)
+        if not (MIN_PRIME_COUNT <= prime_count <= MAX_PRIME_COUNT):
+            continue
+        consecutive_pairs = sum(
+            1 for i in range(TICKET_SIZE - 1) if ticket[i + 1] - ticket[i] == 1
+        )
+        if consecutive_pairs > MAX_CONSECUTIVE_PAIRS:
+            continue
         results.append(ticket)
         if len(results) >= num_tickets:
             break
@@ -146,12 +162,16 @@ def generate_tickets(
 
 
 def ticket_stats(ticket: Iterable[int]) -> dict[str, int]:
-    """Per-ticket diagnostics (sum, odd/even, big/small counts)."""
-    t = list(ticket)
+    """Per-ticket diagnostics (sum, odd/even, big/small, prime, consecutive)."""
+    t = sorted(ticket)
     return {
         "sum": sum(t),
         "odd_count": sum(1 for n in t if n % 2 == 1),
         "even_count": sum(1 for n in t if n % 2 == 0),
         "big_count": sum(1 for n in t if n > BIG_THRESHOLD),
         "small_count": sum(1 for n in t if n <= BIG_THRESHOLD),
+        "prime_count": sum(1 for n in t if n in PRIMES_SET),
+        "consecutive_pairs": sum(
+            1 for i in range(len(t) - 1) if t[i + 1] - t[i] == 1
+        ),
     }
