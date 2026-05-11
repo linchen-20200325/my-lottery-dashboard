@@ -1,12 +1,12 @@
 # STATE — my-lottery-2026
 
 ## 專案目標
-大樂透 (6/49) 動態量化選號系統 (v3.0)。Streamlit Cloud 線上 App。
-EV<0 認知；不預測未來；以動能 + 均值回歸 + 五大靜態濾網雙層過濾，壓縮包牌成本。
+大樂透 (6/49) 量化訊號儀表板 (v5.0)。Streamlit Cloud 線上 App。
+Signal-Driven · Defensive Architecture · Performance First。EV<0 認知；不預測。
 
 ## 技術棧
-- Python 標準庫（`random`, `itertools`, `collections`）為核心
-- Streamlit（UI）、`math.comb`（成本計算）
+- Python 標準庫（`random`, `itertools`, `collections`, `statistics`）為核心
+- Streamlit（UI）+ `@st.cache_data(ttl=3600)`、`math.comb`（成本計算）
 - 離線輔助：`taiwanlottery` (PyPI) 抓檔
 - 無 `pandas` / `numpy`
 - 部署：GitHub → Streamlit Cloud（入口 `streamlit_app.py`）
@@ -14,39 +14,41 @@ EV<0 認知；不預測未來；以動能 + 均值回歸 + 五大靜態濾網雙
 ## 目錄結構
 ```
 my-lottery-2026/
-├── streamlit_app.py                       # Streamlit 入口 (v3.0 UI)
+├── streamlit_app.py                       # Streamlit 入口 (v5.0 UI + 容錯)
 ├── src/
 │   ├── generator/
-│   │   ├── history_engine.py              # 熱/溫/冷分層 + 雙向尾數排除 + 動態雙膽
+│   │   ├── history_engine.py              # Z-Score 冷熱 + SMA 動態和值 + STATIC_FALLBACK
 │   │   └── lotto_picker.py                # 五階段五濾網主流程
 │   ├── data/loader.py                     # CSV/JSON 載入 (檔案 / 字串 / 上傳)
 │   ├── analytics/
 │   │   ├── cost_calc.py                   # 包牌成本（live app 可用）
-│   │   └── backtest.py                    # 離線命中率回測 CLI
+│   │   ├── backtest.py                    # 離線命中率回測 CLI
+│   │   └── metrics.py                     # compression_rate + survival_rate (§3)
 │   └── scraper/lotto649_downloader.py     # 離線抓檔（用 taiwanlottery 套件）
 ├── data/lotto649.csv                      # 倉庫內附歷史資料（合成樣本/真實）
-├── tests/                                 # 41 個單元測試
+├── tests/                                 # 53 個單元測試
 ├── requirements.txt
 ├── CLAUDE.md
 └── STATE.md
 ```
 
-## 演算法 v3.0（協定 §6 摘要）
-- **Phase 1 動態歷史分析** — 熱(≤2 期) / 溫(3-14 期) / 冷(≥15 期)；過熱尾數(近 3 期 ≥4 次) ∪ 死寂尾數(10 期未出) = `exclude_tails`
-- **Phase 2 動態雙膽** — 1 熱 + 1 冷；可手動覆寫
+## 演算法 v5.0（協定 §6 摘要）
+- **Phase 1 動態訊號** — Z-Score 冷熱：熱 `≤ max(2, μ−0.5σ)` / 冷 `≥ μ+1.5σ`；動態和值 `SMA(10) ± 30`，clamp `[90, 210]`；過熱/死寂尾數
+- **Phase 2 Cache + 優雅降級** — `@st.cache_data(ttl=3600)`；失敗 swap `STATIC_FALLBACK_ANALYSIS` (sum 120-180、無排除) + `st.warning`
 - **Phase 3 矩陣均勻化** — `random.shuffle(combinations)`
-- **Phase 4 五大濾網** — sum 120-180, odd ∈ {2,3,4}, big(>31)≥3, prime ∈ [1,3], consecutive_pairs ≤ 2
+- **Phase 4 五大濾網** — prime ∈ [1,3], consec_pairs ≤ 2, **動態 sum**, odd ∈ {2,3,4}, big(>31)≥3
+- **§3 回測指標** — `compression_rate`（14M 組合留多少）/ `survival_rate`（過去開獎被殺率）
 
 ## 目前進度
-- [x] 協議升級 Core Protocol v2.0 + §6 Domain v3.0
-- [x] 歷史抓檔 (改用 `taiwanlottery` PyPI 套件)
-- [x] 動態歷史引擎 (`history_engine.py`)
-- [x] 五階段選號核心 (`lotto_picker.py` v3.0) + 41 單元測試
-- [x] Streamlit UI v3.0（上傳 / 滑桿 / 動態手動雙模）
-- [x] 包牌成本計算 + 離線回測 CLI
+- [x] Core Protocol v2.0 + §6 Domain v5.0
+- [x] 歷史抓檔（`taiwanlottery` 套件）
+- [x] Z-Score 動態訊號引擎 (`history_engine.py` v5.0)
+- [x] 五階段五濾網選號核心 (`lotto_picker.py` v5.0) + 53 單元測試
+- [x] Streamlit UI v5.0（cache + fallback + 滑桿 + 動態/手動覆寫）
+- [x] 回測指標 (`src/analytics/metrics.py`)
 - [x] 倉庫內附 50 期合成樣本（CSV）
 - [ ] 部署 Streamlit Cloud（手動）
-- [ ] 用真實 500 期資料覆蓋合成樣本
+- [ ] 用真實 500 期資料覆蓋合成樣本（本機 scraper）
 
 ## 常用指令
 ```bash
@@ -54,10 +56,12 @@ my-lottery-2026/
 streamlit run streamlit_app.py
 # 跑測試
 python -m unittest discover tests -v
-# 抓真實歷史（本機，需網路；會覆蓋 data/lotto649.csv）
+# 抓真實歷史（本機，需網路）
 python -m src.scraper.lotto649_downloader --periods 500
-# 離線回測
+# 離線回測 (命中率)
 python -m src.analytics.backtest --csv data/lotto649.csv --lookback 30
+# 濾網診斷 (壓縮率 + 存活率)
+python -m src.analytics.metrics --csv data/lotto649.csv
 ```
 
 ## 部署 (Streamlit Cloud)
@@ -65,4 +69,4 @@ python -m src.analytics.backtest --csv data/lotto649.csv --lookback 30
 2. 至 https://share.streamlit.io 連接 repo
 3. Main file：`streamlit_app.py`
 4. Python 版本 3.10+
-5. UI 內若 `data/lotto649.csv` 過舊，使用「上傳 CSV」選項覆寫
+5. UI 內若 `data/lotto649.csv` 過舊或缺檔，會自動降級至靜態安全模式並顯示警告

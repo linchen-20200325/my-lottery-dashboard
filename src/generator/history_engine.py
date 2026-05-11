@@ -1,33 +1,49 @@
-"""Dynamic history engine (v3.0 Phase 1).
+"""Dynamic history engine (v5.0 — Phase 1 signal generation).
 
-Consumes a chronologically ordered list of historical draws (newest first)
-and produces:
-  - hot / warm / cold layering by 遺漏期數 (gap since last appearance)
-  - bidirectional `exclude_tails` set: overheated ∪ dormant
-  - `auto_keys`: one number sampled from hot ∩ one from cold (dynamic 雙膽)
+Produces signals from chronologically ordered historical draws (newest first):
+  - Z-Score gap layering (hot / warm / cold)
+  - Dynamic sum range from SMA-N ± pad, clamped to safe bounds
+  - Bidirectional `exclude_tails` (overheated ∪ dormant)
+  - `auto_keys`: 1 hot + 1 cold (dynamic 雙膽)
+  - `STATIC_FALLBACK_ANALYSIS` constant for graceful degradation when
+    historical data is unavailable (UI failure path).
 
-Stdlib only — `random` + `collections`. No pandas / numpy.
+Stdlib only — `random` + `collections` + `statistics`.
 """
 
 from __future__ import annotations
 
 import random
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from statistics import mean, pstdev
 from typing import Sequence
 
 POOL_MIN, POOL_MAX = 1, 49
 TICKET_SIZE = 6
 TAILS_RANGE = range(10)
 
-# Default thresholds — overridable from caller / UI sliders
+# Default tunables — overridable via UI sliders / function args
 DEFAULTS = {
-    "hot_max_gap": 2,          # gap ≤ 2 → 熱碼
-    "warm_max_gap": 14,        # 2 < gap ≤ 14 → 溫碼; gap > 14 → 冷碼
+    # Z-Score gap layering
+    "hot_sigma_factor": 0.5,        # hot threshold = max(2, μ - 0.5σ)
+    "cold_sigma_factor": 1.5,       # cold threshold = μ + 1.5σ
+    "min_std": 1.0,                 # std floor to prevent /0
+    "hot_threshold_floor": 2,       # hot threshold never above this floor
+    # Dynamic sum range
+    "sum_sma_window": 10,           # last N draws for SMA
+    "sum_range_pad": 30,            # ±pad around SMA
+    "sum_clamp_lo": 90,             # absolute safety floor
+    "sum_clamp_hi": 210,            # absolute safety ceiling
+    # Tail signals
     "overheat_recent_periods": 3,
-    "overheat_min_count": 4,   # 近 3 期該尾出 ≥4 次 → 過熱
-    "dormant_periods": 10,     # 連續 10 期該尾未出 → 死寂
+    "overheat_min_count": 4,
+    "dormant_periods": 10,
 }
+
+# Static fallback constants (Phase 2 graceful degradation)
+STATIC_SUM_MIN = 120
+STATIC_SUM_MAX = 180
 
 
 @dataclass(frozen=True)
@@ -35,47 +51,70 @@ class HistoryAnalysis:
     hot: list[int]
     warm: list[int]
     cold: list[int]
-    gaps: dict[int, int]              # number → 遺漏期數
-    tail_counts_recent: dict[int, int]  # tail → count in `overheat_recent_periods`
+    gaps: dict[int, int]
+    gap_mean: float
+    gap_std: float
+    hot_threshold: float           # dynamic Z-Score derived
+    cold_threshold: float
+    sum_sma: float                 # SMA of recent sums
+    sum_min_dynamic: int           # max(clamp_lo, SMA - pad)
+    sum_max_dynamic: int           # min(clamp_hi, SMA + pad)
+    tail_counts_recent: dict[int, int]
     overheated_tails: list[int]
     dormant_tails: list[int]
-    exclude_tails: list[int]          # overheated ∪ dormant
-    auto_keys: list[int]              # 1 hot + 1 cold (dynamic 雙膽)
+    exclude_tails: list[int]
+    auto_keys: list[int]
+    is_fallback: bool = False      # True iff produced by graceful degradation
+
+
+# Fallback singleton — used by Phase 2 when load/analyze raises
+STATIC_FALLBACK_ANALYSIS = HistoryAnalysis(
+    hot=[], warm=list(range(POOL_MIN, POOL_MAX + 1)), cold=[],
+    gaps={n: 0 for n in range(POOL_MIN, POOL_MAX + 1)},
+    gap_mean=0.0, gap_std=0.0,
+    hot_threshold=2.0, cold_threshold=15.0,
+    sum_sma=float((STATIC_SUM_MIN + STATIC_SUM_MAX) // 2),
+    sum_min_dynamic=STATIC_SUM_MIN, sum_max_dynamic=STATIC_SUM_MAX,
+    tail_counts_recent={t: 0 for t in TAILS_RANGE},
+    overheated_tails=[], dormant_tails=[],
+    exclude_tails=[], auto_keys=[],
+    is_fallback=True,
+)
+
+
+# --- Internals ----------------------------------------------------------------
 
 
 def _gaps(draws: Sequence[Sequence[int]]) -> dict[int, int]:
-    """Return number → 遺漏期數 (periods since last appearance).
-
-    `draws[0]` is newest. A number appearing in draws[0] has gap 0.
-    A number never seen across history gets `len(draws)` (treated as cold).
-    """
+    """Number → 遺漏期數 (newest-first; gap 0 = appeared in latest draw)."""
     last_seen: dict[int, int] = {}
     for i, draw in enumerate(draws):
         for n in draw:
             last_seen.setdefault(n, i)
-    out: dict[int, int] = {}
-    for n in range(POOL_MIN, POOL_MAX + 1):
-        out[n] = last_seen.get(n, len(draws))
-    return out
+    return {
+        n: last_seen.get(n, len(draws))
+        for n in range(POOL_MIN, POOL_MAX + 1)
+    }
 
 
-def _layer(
-    gaps: dict[int, int], hot_max: int, warm_max: int
+def _z_layer(
+    gaps: dict[int, int],
+    hot_threshold: float,
+    cold_threshold: float,
 ) -> tuple[list[int], list[int], list[int]]:
     hot, warm, cold = [], [], []
     for n in range(POOL_MIN, POOL_MAX + 1):
         g = gaps[n]
-        if g <= hot_max:
+        if g <= hot_threshold:
             hot.append(n)
-        elif g <= warm_max:
-            warm.append(n)
-        else:
+        elif g >= cold_threshold:
             cold.append(n)
+        else:
+            warm.append(n)
     return hot, warm, cold
 
 
 def _tail_counts(draws: Sequence[Sequence[int]], k: int) -> dict[int, int]:
-    """Count tail occurrences across the most recent `k` draws."""
     counter: Counter[int] = Counter()
     for draw in draws[:k]:
         for n in draw:
@@ -84,7 +123,6 @@ def _tail_counts(draws: Sequence[Sequence[int]], k: int) -> dict[int, int]:
 
 
 def _dormant_tails(draws: Sequence[Sequence[int]], k: int) -> list[int]:
-    """Tails not appearing in the last `k` draws at all."""
     seen: set[int] = set()
     for draw in draws[:k]:
         for n in draw:
@@ -95,47 +133,82 @@ def _dormant_tails(draws: Sequence[Sequence[int]], k: int) -> list[int]:
 def _auto_keys(
     hot: list[int], cold: list[int], rng: random.Random
 ) -> list[int]:
-    """Pick 1 hot + 1 cold as 雙膽. If a layer empty, sample from non-empty."""
     keys: list[int] = []
     if hot:
         keys.append(rng.choice(hot))
     if cold:
-        # avoid collision with hot pick (cannot collide by definition, but safe)
         candidates = [n for n in cold if n not in keys]
         if candidates:
             keys.append(rng.choice(candidates))
     if not keys:
-        # degenerate: history empty → fall back to any pool number
         keys = [rng.randint(POOL_MIN, POOL_MAX)]
     return sorted(keys)
 
 
+def _dynamic_sum_range(
+    draws: Sequence[Sequence[int]],
+    window: int,
+    pad: int,
+    clamp_lo: int,
+    clamp_hi: int,
+) -> tuple[float, int, int]:
+    sums = [sum(d) for d in draws[:window]]
+    sma = mean(sums) if sums else float((clamp_lo + clamp_hi) // 2)
+    lo = max(clamp_lo, int(round(sma - pad)))
+    hi = min(clamp_hi, int(round(sma + pad)))
+    return sma, lo, hi
+
+
+# --- Public API ---------------------------------------------------------------
+
+
 def analyze(
     draws: Sequence[Sequence[int]],
-    hot_max_gap: int = DEFAULTS["hot_max_gap"],
-    warm_max_gap: int = DEFAULTS["warm_max_gap"],
+    hot_sigma_factor: float = DEFAULTS["hot_sigma_factor"],
+    cold_sigma_factor: float = DEFAULTS["cold_sigma_factor"],
+    min_std: float = DEFAULTS["min_std"],
+    hot_threshold_floor: int = DEFAULTS["hot_threshold_floor"],
+    sum_sma_window: int = DEFAULTS["sum_sma_window"],
+    sum_range_pad: int = DEFAULTS["sum_range_pad"],
+    sum_clamp_lo: int = DEFAULTS["sum_clamp_lo"],
+    sum_clamp_hi: int = DEFAULTS["sum_clamp_hi"],
     overheat_recent_periods: int = DEFAULTS["overheat_recent_periods"],
     overheat_min_count: int = DEFAULTS["overheat_min_count"],
     dormant_periods: int = DEFAULTS["dormant_periods"],
     rng: random.Random | None = None,
 ) -> HistoryAnalysis:
-    """Run Phase 1 dynamic analysis.
+    """Phase 1 dynamic signal generation.
 
-    Raises ValueError if `draws` is empty or thresholds are nonsense.
+    Raises ValueError on empty draws or invalid thresholds. Callers wanting
+    graceful degradation should catch this and substitute STATIC_FALLBACK_ANALYSIS.
     """
     if not draws:
         raise ValueError("history_draws must not be empty")
-    if hot_max_gap < 0 or warm_max_gap < hot_max_gap:
-        raise ValueError("require 0 <= hot_max_gap <= warm_max_gap")
+    if hot_sigma_factor < 0 or cold_sigma_factor < 0:
+        raise ValueError("sigma factors must be >= 0")
+    if sum_clamp_lo >= sum_clamp_hi:
+        raise ValueError("sum_clamp_lo must be < sum_clamp_hi")
+    if sum_range_pad < 0:
+        raise ValueError("sum_range_pad must be >= 0")
     if overheat_recent_periods < 1 or dormant_periods < 1:
-        raise ValueError("threshold periods must be >= 1")
+        raise ValueError("recent-period thresholds must be >= 1")
     if overheat_min_count < 1:
         raise ValueError("overheat_min_count must be >= 1")
 
     rng = rng if rng is not None else random.Random()
 
     gaps = _gaps(draws)
-    hot, warm, cold = _layer(gaps, hot_max_gap, warm_max_gap)
+    gap_values = list(gaps.values())
+    g_mean = mean(gap_values)
+    g_std = max(min_std, pstdev(gap_values))
+    hot_threshold = max(float(hot_threshold_floor), g_mean - hot_sigma_factor * g_std)
+    cold_threshold = g_mean + cold_sigma_factor * g_std
+
+    hot, warm, cold = _z_layer(gaps, hot_threshold, cold_threshold)
+
+    sum_sma, sum_lo, sum_hi = _dynamic_sum_range(
+        draws, sum_sma_window, sum_range_pad, sum_clamp_lo, sum_clamp_hi,
+    )
 
     tail_counts = _tail_counts(draws, overheat_recent_periods)
     overheated = sorted(
@@ -151,9 +224,17 @@ def analyze(
         warm=warm,
         cold=cold,
         gaps=gaps,
+        gap_mean=g_mean,
+        gap_std=g_std,
+        hot_threshold=hot_threshold,
+        cold_threshold=cold_threshold,
+        sum_sma=sum_sma,
+        sum_min_dynamic=sum_lo,
+        sum_max_dynamic=sum_hi,
         tail_counts_recent=tail_counts,
         overheated_tails=overheated,
         dormant_tails=dormant,
         exclude_tails=exclude_tails,
         auto_keys=auto_keys,
+        is_fallback=False,
     )
