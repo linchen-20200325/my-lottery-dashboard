@@ -1,32 +1,39 @@
-"""Lotto 6/49 quantitative ticket generator (4-phase filter model, v2.0).
-
-Stdlib-only by design (no pandas/numpy). Each call is stateless and depends
-solely on t-1 inputs — no historical database is consulted.
+"""Lotto 6/49 dynamic ticket generator (v3.0, 5-phase model).
 
 Pipeline:
-    Phase 1  Pool reduction   : universe = {1..49} \\ previous_draw \\ tail_matches
-    Phase 2  Pillar & drag    : enforce key_nums; drag = (drag_nums ∩ pool) - key_nums
-    Phase 3  Matrix shuffling : random.shuffle(list(combinations(drag, needed)))
-    Phase 4  Filters          : sum 120-180, odd ∈ {2,3,4}, big(>31) ≥ 3,
-                                prime_count ∈ [1,3], consecutive_pairs ≤ 2
+    Phase 1  Historical analysis  : delegate to history_engine.analyze()
+    Phase 2  Pool + dynamic 雙膽    : exclude_tails ← analysis (or manual),
+                                     key_nums ← auto_keys (or manual)
+    Phase 3  Matrix shuffling      : random.shuffle(list(combinations(...)))
+    Phase 4  Five filters          : sum 120-180, odd ∈ {2,3,4}, big(>31) ≥ 3,
+                                     prime ∈ [1,3], consecutive_pairs ≤ 2
+
+Stdlib only: `random` + `itertools` (+ `collections` via history_engine).
 """
 
 from __future__ import annotations
 
 import random
 from itertools import combinations
-from typing import Iterable
+from typing import Iterable, Sequence
 
-POOL_MIN, POOL_MAX = 1, 49
-TICKET_SIZE = 6
+from src.generator.history_engine import (
+    DEFAULTS,
+    HistoryAnalysis,
+    POOL_MAX,
+    POOL_MIN,
+    TICKET_SIZE,
+    analyze,
+)
+
 SUM_MIN, SUM_MAX = 120, 180
-ALLOWED_ODD_COUNTS: frozenset[int] = frozenset({2, 3, 4})
+ALLOWED_ODD_COUNTS: frozenset = frozenset({2, 3, 4})
 BIG_THRESHOLD = 31
 MIN_BIG_COUNT = 3
 MAX_KEY_NUMS = 5
 MIN_KEY_NUMS = 1
 
-PRIMES_SET: frozenset[int] = frozenset(
+PRIMES_SET: frozenset = frozenset(
     {2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47}
 )
 MIN_PRIME_COUNT = 1
@@ -34,7 +41,7 @@ MAX_PRIME_COUNT = 3
 MAX_CONSECUTIVE_PAIRS = 2
 
 
-# --- Validation ---------------------------------------------------------------
+# --- Validation helpers -------------------------------------------------------
 
 
 def _ensure_int_list(name: str, values: Iterable[int]) -> list[int]:
@@ -57,43 +64,42 @@ def _validate_unique(name: str, values: list[int]) -> None:
         raise ValueError(f"{name} must not contain duplicates")
 
 
+def _validate_history(draws: Sequence[Sequence[int]]) -> None:
+    if not draws:
+        raise ValueError("history_draws must not be empty")
+    for i, d in enumerate(draws):
+        if len(d) != TICKET_SIZE:
+            raise ValueError(f"history_draws[{i}] must have 6 numbers")
+        ints = _ensure_int_list(f"history_draws[{i}]", d)
+        _validate_range(f"history_draws[{i}]", ints, POOL_MIN, POOL_MAX)
+        _validate_unique(f"history_draws[{i}]", ints)
+
+
 # --- Core algorithm -----------------------------------------------------------
 
 
 def generate_tickets(
-    previous_draw: Iterable[int],
-    exclude_tails: Iterable[int],
-    key_nums: Iterable[int],
-    drag_nums: Iterable[int] | None = None,
+    history_draws: Sequence[Sequence[int]],
     num_tickets: int = 5,
+    *,
+    hot_max_gap: int = DEFAULTS["hot_max_gap"],
+    warm_max_gap: int = DEFAULTS["warm_max_gap"],
+    overheat_recent_periods: int = DEFAULTS["overheat_recent_periods"],
+    overheat_min_count: int = DEFAULTS["overheat_min_count"],
+    dormant_periods: int = DEFAULTS["dormant_periods"],
+    manual_keys: Iterable[int] | None = None,
+    manual_excluded_tails: Iterable[int] | None = None,
     rng: random.Random | None = None,
-) -> list[tuple[int, ...]]:
-    """Produce up to `num_tickets` filtered 6-number combinations.
+) -> tuple[list[tuple[int, ...]], HistoryAnalysis]:
+    """Produce up to `num_tickets` 6-number combinations + analysis snapshot.
 
-    Raises:
-        ValueError on any invalid input or unsatisfiable configuration.
+    `manual_keys` / `manual_excluded_tails`, when provided, supersede the
+    dynamic values from `history_engine.analyze()`. This is the UI "manual
+    override" surface that satisfies v3.0 §3 manual-fallback requirement.
+
+    Raises ValueError on invalid input or unsatisfiable configuration.
     """
-    # --- Coerce & validate ---
-    prev = _ensure_int_list("previous_draw", previous_draw)
-    tails = _ensure_int_list("exclude_tails", exclude_tails)
-    keys = _ensure_int_list("key_nums", key_nums)
-
-    if len(prev) != TICKET_SIZE:
-        raise ValueError(
-            f"previous_draw must have exactly {TICKET_SIZE} numbers, got {len(prev)}"
-        )
-    _validate_range("previous_draw", prev, POOL_MIN, POOL_MAX)
-    _validate_unique("previous_draw", prev)
-
-    _validate_range("exclude_tails", tails, 0, 9)
-    _validate_unique("exclude_tails", tails)
-
-    _validate_range("key_nums", keys, POOL_MIN, POOL_MAX)
-    _validate_unique("key_nums", keys)
-    if not (MIN_KEY_NUMS <= len(keys) <= MAX_KEY_NUMS):
-        raise ValueError(
-            f"key_nums must contain {MIN_KEY_NUMS} to {MAX_KEY_NUMS} numbers"
-        )
+    _validate_history(history_draws)
 
     if not isinstance(num_tickets, int) or isinstance(num_tickets, bool):
         raise ValueError("num_tickets must be an integer")
@@ -102,29 +108,52 @@ def generate_tickets(
 
     rng = rng if rng is not None else random.Random()
 
-    # --- Phase 1: pool reduction ---
-    tail_set = set(tails)
+    # --- Phase 1: historical analysis ---
+    analysis = analyze(
+        draws=history_draws,
+        hot_max_gap=hot_max_gap,
+        warm_max_gap=warm_max_gap,
+        overheat_recent_periods=overheat_recent_periods,
+        overheat_min_count=overheat_min_count,
+        dormant_periods=dormant_periods,
+        rng=rng,
+    )
+
+    # --- Phase 2: pool + dynamic 雙膽 ---
+    if manual_excluded_tails is not None:
+        excl = _ensure_int_list("manual_excluded_tails", manual_excluded_tails)
+        _validate_range("manual_excluded_tails", excl, 0, 9)
+        _validate_unique("manual_excluded_tails", excl)
+        tail_set = set(excl)
+    else:
+        tail_set = set(analysis.exclude_tails)
+
     pool: set[int] = {
-        n for n in range(POOL_MIN, POOL_MAX + 1)
-        if n not in set(prev) and (n % 10) not in tail_set
+        n for n in range(POOL_MIN, POOL_MAX + 1) if (n % 10) not in tail_set
     }
 
-    # --- Phase 2: pillar & drag ---
-    key_set = set(keys)
-    # Keys always survive Phase 1 ("絕對優先權")
-    if drag_nums is None:
-        drag_candidates: set[int] = pool - key_set
+    if manual_keys is not None:
+        keys = _ensure_int_list("manual_keys", manual_keys)
+        _validate_range("manual_keys", keys, POOL_MIN, POOL_MAX)
+        _validate_unique("manual_keys", keys)
+        if not (MIN_KEY_NUMS <= len(keys) <= MAX_KEY_NUMS):
+            raise ValueError(
+                f"manual_keys must contain {MIN_KEY_NUMS}-{MAX_KEY_NUMS} numbers"
+            )
     else:
-        drag_list = _ensure_int_list("drag_nums", drag_nums)
-        _validate_range("drag_nums", drag_list, POOL_MIN, POOL_MAX)
-        _validate_unique("drag_nums", drag_list)
-        drag_candidates = (set(drag_list) & pool) - key_set
+        keys = list(analysis.auto_keys)
+        if not (MIN_KEY_NUMS <= len(keys) <= MAX_KEY_NUMS):
+            raise ValueError(
+                f"auto_keys yielded {len(keys)}; widen thresholds or pass manual_keys"
+            )
 
+    key_set = set(keys)
+    drag_candidates = pool - key_set
     needed = TICKET_SIZE - len(keys)
     if len(drag_candidates) < needed:
         raise ValueError(
-            f"insufficient drag candidates after Phase 1: "
-            f"need {needed}, available {len(drag_candidates)}"
+            f"insufficient drag candidates: need {needed}, "
+            f"available {len(drag_candidates)} (after excluding tails {sorted(tail_set)})"
         )
 
     # --- Phase 3: matrix shuffling ---
@@ -132,7 +161,7 @@ def generate_tickets(
     all_combos = list(combinations(drag_sorted, needed))
     rng.shuffle(all_combos)
 
-    # --- Phase 4: multi-factor filters ---
+    # --- Phase 4: five filters ---
     results: list[tuple[int, ...]] = []
     for combo in all_combos:
         ticket = tuple(sorted(key_set.union(combo)))
@@ -155,7 +184,7 @@ def generate_tickets(
         if len(results) >= num_tickets:
             break
 
-    return results
+    return results, analysis
 
 
 # --- Helpers ------------------------------------------------------------------

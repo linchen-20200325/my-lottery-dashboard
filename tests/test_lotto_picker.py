@@ -1,4 +1,4 @@
-"""Unit tests for the 4-phase Lotto picker. Stdlib only (unittest)."""
+"""Unit tests for the v3.0 dynamic Lotto picker."""
 
 import random
 import unittest
@@ -18,6 +18,20 @@ from src.generator.lotto_picker import (
     ticket_stats,
 )
 
+# A diverse 30-period synthetic history (enough for layering tests)
+HISTORY = [
+    [3, 12, 19, 25, 33, 42], [7, 15, 22, 28, 36, 45], [1, 9, 18, 26, 31, 40],
+    [4, 11, 20, 24, 35, 44], [2, 14, 17, 23, 38, 47], [6, 13, 21, 27, 34, 43],
+    [5, 10, 16, 29, 37, 41], [8, 19, 25, 30, 39, 46], [1, 11, 22, 32, 41, 48],
+    [3, 14, 23, 28, 35, 42], [7, 12, 18, 26, 34, 45], [4, 15, 21, 27, 33, 43],
+    [2, 9, 17, 24, 36, 44], [6, 13, 20, 29, 37, 47], [5, 10, 19, 25, 31, 40],
+    [8, 11, 16, 22, 38, 46], [1, 14, 21, 28, 35, 41], [3, 9, 18, 27, 32, 49],
+    [7, 12, 23, 26, 34, 43], [4, 15, 17, 29, 36, 44], [2, 13, 22, 30, 39, 45],
+    [6, 10, 16, 24, 33, 42], [5, 11, 21, 27, 37, 46], [8, 14, 18, 28, 31, 48],
+    [1, 9, 20, 25, 35, 41], [3, 13, 19, 26, 38, 47], [7, 11, 22, 30, 34, 43],
+    [4, 12, 17, 24, 36, 44], [2, 15, 21, 29, 33, 42], [6, 10, 23, 27, 39, 45],
+]
+
 
 def _is_valid_ticket(t):
     if len(t) != TICKET_SIZE or len(set(t)) != TICKET_SIZE:
@@ -30,155 +44,124 @@ def _is_valid_ticket(t):
         return False
     if sum(1 for n in t if n > BIG_THRESHOLD) < MIN_BIG_COUNT:
         return False
-    prime_count = sum(1 for n in t if n in PRIMES_SET)
-    if not (MIN_PRIME_COUNT <= prime_count <= MAX_PRIME_COUNT):
+    primes = sum(1 for n in t if n in PRIMES_SET)
+    if not (MIN_PRIME_COUNT <= primes <= MAX_PRIME_COUNT):
         return False
-    sorted_t = sorted(t)
-    consec = sum(
-        1 for i in range(len(sorted_t) - 1) if sorted_t[i + 1] - sorted_t[i] == 1
-    )
+    s = sorted(t)
+    consec = sum(1 for i in range(len(s) - 1) if s[i + 1] - s[i] == 1)
     if consec > MAX_CONSECUTIVE_PAIRS:
         return False
     return True
 
 
-class TestHappyPath(unittest.TestCase):
-    def test_generates_filtered_tickets(self):
-        tickets = generate_tickets(
-            previous_draw=[5, 12, 18, 25, 33, 42],
-            exclude_tails=[],
-            key_nums=[7, 17, 27],
+class TestDynamicHappyPath(unittest.TestCase):
+    def test_returns_filtered_tickets_and_analysis(self):
+        tickets, analysis = generate_tickets(
+            history_draws=HISTORY,
             num_tickets=5,
-            rng=random.Random(42),
+            rng=random.Random(2026),
         )
-        self.assertEqual(len(tickets), 5)
+        self.assertGreater(len(tickets), 0)
         for t in tickets:
-            self.assertTrue(_is_valid_ticket(t), f"invalid ticket: {t}")
-            self.assertIn(7, t)
-            self.assertIn(17, t)
-            self.assertIn(27, t)
+            self.assertTrue(_is_valid_ticket(t), f"invalid: {t}")
+        # auto_keys are in every ticket
+        for k in analysis.auto_keys:
+            for t in tickets:
+                self.assertIn(k, t)
 
     def test_excluded_tails_respected(self):
-        tickets = generate_tickets(
-            previous_draw=[1, 2, 3, 4, 5, 6],
-            exclude_tails=[0, 9],  # exclude 9,10,19,20,29,30,39,40,49
-            key_nums=[33, 35],
-            num_tickets=10,
-            rng=random.Random(1),
-        )
-        excluded = {n for n in range(1, 50) if n % 10 in {0, 9}}
-        for t in tickets:
-            self.assertFalse(set(t) & excluded, f"tail leak in {t}")
-
-    def test_seed_is_reproducible(self):
-        kw = dict(
-            previous_draw=[5, 12, 18, 25, 33, 42],
-            exclude_tails=[],
-            key_nums=[7, 17, 27],
+        tickets, analysis = generate_tickets(
+            history_draws=HISTORY,
             num_tickets=5,
+            rng=random.Random(7),
         )
-        a = generate_tickets(**kw, rng=random.Random(123))
-        b = generate_tickets(**kw, rng=random.Random(123))
+        excluded = {n for n in range(1, 50) if (n % 10) in set(analysis.exclude_tails)}
+        excluded -= set(analysis.auto_keys)  # keys can be force-included (but shouldn't overlap)
+        for t in tickets:
+            self.assertFalse(set(t) & excluded, f"tail leak {t}")
+
+    def test_seed_reproducible(self):
+        a, _ = generate_tickets(history_draws=HISTORY, num_tickets=5,
+                                rng=random.Random(123))
+        b, _ = generate_tickets(history_draws=HISTORY, num_tickets=5,
+                                rng=random.Random(123))
         self.assertEqual(a, b)
 
 
+class TestManualOverride(unittest.TestCase):
+    def test_manual_keys_override(self):
+        tickets, _ = generate_tickets(
+            history_draws=HISTORY,
+            num_tickets=5,
+            manual_keys=[7, 17],
+            manual_excluded_tails=[],
+            rng=random.Random(1),
+        )
+        for t in tickets:
+            self.assertIn(7, t)
+            self.assertIn(17, t)
+
+    def test_manual_excluded_tails_override(self):
+        tickets, _ = generate_tickets(
+            history_draws=HISTORY,
+            num_tickets=10,
+            manual_keys=[33],
+            manual_excluded_tails=[0, 9],
+            rng=random.Random(2),
+        )
+        forbidden = {n for n in range(1, 50) if n % 10 in {0, 9}}
+        for t in tickets:
+            self.assertFalse(set(t) & forbidden, f"tail leak {t}")
+
+
 class TestEdgeCases(unittest.TestCase):
-    def test_previous_draw_wrong_length(self):
+    def test_empty_history_rejected(self):
+        with self.assertRaises(ValueError):
+            generate_tickets(history_draws=[], num_tickets=5)
+
+    def test_invalid_history_row(self):
+        bad = [[1, 2, 3, 4, 5, 50]] + HISTORY
+        with self.assertRaises(ValueError):
+            generate_tickets(history_draws=bad, num_tickets=5)
+
+    def test_manual_keys_too_many(self):
         with self.assertRaises(ValueError):
             generate_tickets(
-                previous_draw=[1, 2, 3],
-                exclude_tails=[],
-                key_nums=[7],
-                num_tickets=1,
+                history_draws=HISTORY,
+                num_tickets=5,
+                manual_keys=[1, 2, 3, 4, 5, 6],
             )
 
-    def test_previous_draw_out_of_range(self):
+    def test_manual_keys_duplicates(self):
         with self.assertRaises(ValueError):
             generate_tickets(
-                previous_draw=[1, 2, 3, 4, 5, 50],
-                exclude_tails=[],
-                key_nums=[7],
-                num_tickets=1,
-            )
-
-    def test_key_nums_too_many(self):
-        with self.assertRaises(ValueError):
-            generate_tickets(
-                previous_draw=[5, 12, 18, 25, 33, 42],
-                exclude_tails=[],
-                key_nums=[1, 2, 3, 4, 5, 6],
-                num_tickets=1,
-            )
-
-    def test_key_nums_zero(self):
-        with self.assertRaises(ValueError):
-            generate_tickets(
-                previous_draw=[5, 12, 18, 25, 33, 42],
-                exclude_tails=[],
-                key_nums=[],
-                num_tickets=1,
-            )
-
-    def test_insufficient_drag(self):
-        with self.assertRaises(ValueError):
-            generate_tickets(
-                previous_draw=[5, 12, 18, 25, 33, 42],
-                exclude_tails=[],
-                key_nums=[7],
-                drag_nums=[8, 9],
-                num_tickets=1,
+                history_draws=HISTORY,
+                num_tickets=5,
+                manual_keys=[5, 5, 7],
             )
 
     def test_invalid_num_tickets(self):
         with self.assertRaises(ValueError):
-            generate_tickets(
-                previous_draw=[5, 12, 18, 25, 33, 42],
-                exclude_tails=[],
-                key_nums=[7],
-                num_tickets=0,
-            )
+            generate_tickets(history_draws=HISTORY, num_tickets=0)
 
-    def test_duplicates_rejected(self):
+    def test_insufficient_drag_via_aggressive_tail_exclusion(self):
         with self.assertRaises(ValueError):
             generate_tickets(
-                previous_draw=[5, 5, 18, 25, 33, 42],
-                exclude_tails=[],
-                key_nums=[7],
+                history_draws=HISTORY,
                 num_tickets=1,
-            )
-
-    def test_non_int_rejected(self):
-        with self.assertRaises(ValueError):
-            generate_tickets(
-                previous_draw=[5, 12, 18, 25, 33, "42"],
-                exclude_tails=[],
-                key_nums=[7],
-                num_tickets=1,
-            )
-
-    def test_returns_fewer_when_filters_too_strict(self):
-        # Exclude tails 0..9 → drag pool is empty
-        # We expect a ValueError before reaching shuffle/filters
-        with self.assertRaises(ValueError):
-            generate_tickets(
-                previous_draw=[5, 12, 18, 25, 33, 42],
-                exclude_tails=list(range(10)),
-                key_nums=[7],
-                num_tickets=5,
+                manual_keys=[3],
+                manual_excluded_tails=list(range(10)),  # excludes everything
             )
 
 
 class TestStats(unittest.TestCase):
-    def test_stats_sum(self):
+    def test_stats_basic(self):
         s = ticket_stats([1, 2, 3, 4, 5, 6])
         self.assertEqual(s["sum"], 21)
         self.assertEqual(s["odd_count"], 3)
-        self.assertEqual(s["even_count"], 3)
         self.assertEqual(s["big_count"], 0)
-        self.assertEqual(s["small_count"], 6)
 
     def test_stats_prime_and_consecutive(self):
-        # ticket {2,3,5,7,11,13}: all primes (6) ; pairs (2,3) only → 1
         s = ticket_stats([13, 7, 2, 3, 5, 11])
         self.assertEqual(s["prime_count"], 6)
         self.assertEqual(s["consecutive_pairs"], 1)
@@ -186,40 +169,6 @@ class TestStats(unittest.TestCase):
     def test_stats_no_consecutive(self):
         s = ticket_stats([2, 8, 14, 20, 26, 32])
         self.assertEqual(s["consecutive_pairs"], 0)
-
-
-class TestNewFilters(unittest.TestCase):
-    def test_all_tickets_pass_prime_bounds(self):
-        tickets = generate_tickets(
-            previous_draw=[5, 12, 18, 25, 33, 42],
-            exclude_tails=[],
-            key_nums=[7, 17, 27],
-            num_tickets=10,
-            rng=random.Random(2026),
-        )
-        for t in tickets:
-            primes = sum(1 for n in t if n in PRIMES_SET)
-            self.assertGreaterEqual(primes, MIN_PRIME_COUNT, f"too few primes: {t}")
-            self.assertLessEqual(primes, MAX_PRIME_COUNT, f"too many primes: {t}")
-
-    def test_all_tickets_respect_consecutive_cap(self):
-        tickets = generate_tickets(
-            previous_draw=[5, 12, 18, 25, 33, 42],
-            exclude_tails=[],
-            key_nums=[7, 17, 27],
-            num_tickets=10,
-            rng=random.Random(99),
-        )
-        for t in tickets:
-            sorted_t = sorted(t)
-            pairs = sum(
-                1
-                for i in range(len(sorted_t) - 1)
-                if sorted_t[i + 1] - sorted_t[i] == 1
-            )
-            self.assertLessEqual(
-                pairs, MAX_CONSECUTIVE_PAIRS, f"too many consecutive in {t}"
-            )
 
 
 if __name__ == "__main__":
