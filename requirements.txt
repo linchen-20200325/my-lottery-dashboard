@@ -1,5 +1,6 @@
+streamlit>=1.32
+# Below are offline-only deps for src/scraper (not loaded by streamlit_app.py).
+# Streamlit Cloud will install them but the running app never imports them.
 requests>=2.31
 beautifulsoup4>=4.12
 lxml>=5.0
-pandas>=2.2
-streamlit>=1.32

@@ -22,3 +22,15 @@
 ## §5 卡關救援 (Anti-Loop Protocol)
 - 針對同一個報錯，若連續重試 2 次未果，**立即停機**。
 - 啟動除錯協議，並交由我詢問其他 AI 進行雙重驗證。
+
+## §6 大樂透量化選號專案治理協定 (Domain Protocol)
+- **系統定位**：6/49 實務選號產生器；承認獨立隨機 EV<0；不預測，僅壓縮包牌成本、過濾常態尾部劣質組合。
+- **絕對禁忌**：禁止引入任何歷史開獎資料庫；每次執行僅依賴 `t-1` 輸入（`previous_draw / exclude_tails / key_nums / drag_nums / num_tickets`）。
+- **演算法四階段**（順序不可變）：
+  1. **Pool Reduction**：`pool = {1..49} − previous_draw − {n : n%10 ∈ exclude_tails}`
+  2. **Pillar & Drag**：`drag_candidates = (drag_nums ∩ pool) − key_nums`；膽碼具絕對優先權，強制合併入每注。
+  3. **Matrix Shuffling**：`random.shuffle(list(combinations(drag, 6−len(key))))`
+  4. **Filters**：和值 `120≤sum≤180`、奇數數量 `∈ {2,3,4}`、`大數(>31)≥3`；達 `num_tickets` 即 `break`。
+- **依賴限制**：核心生成器僅限 `random` + `itertools`（禁 `pandas` / `numpy`）；Streamlit 為 UI 層例外。
+- **防呆**：膽碼必須 1-5 顆、拖碼足量、無重複、值域 1-49；不符即拋 `ValueError`。
+- **自我審核交付**：寫碼後輸出 5 段報告 → 邏輯審查 / 邊界 / 效能 / Debug / 最終代碼。
