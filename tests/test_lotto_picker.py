@@ -6,7 +6,11 @@ import unittest
 from src.generator.lotto_picker import (
     ALLOWED_ODD_COUNTS,
     BIG_THRESHOLD,
+    MAX_CONSECUTIVE_PAIRS,
+    MAX_PRIME_COUNT,
     MIN_BIG_COUNT,
+    MIN_PRIME_COUNT,
+    PRIMES_SET,
     SUM_MAX,
     SUM_MIN,
     TICKET_SIZE,
@@ -25,6 +29,15 @@ def _is_valid_ticket(t):
     if sum(1 for n in t if n % 2 == 1) not in ALLOWED_ODD_COUNTS:
         return False
     if sum(1 for n in t if n > BIG_THRESHOLD) < MIN_BIG_COUNT:
+        return False
+    prime_count = sum(1 for n in t if n in PRIMES_SET)
+    if not (MIN_PRIME_COUNT <= prime_count <= MAX_PRIME_COUNT):
+        return False
+    sorted_t = sorted(t)
+    consec = sum(
+        1 for i in range(len(sorted_t) - 1) if sorted_t[i + 1] - sorted_t[i] == 1
+    )
+    if consec > MAX_CONSECUTIVE_PAIRS:
         return False
     return True
 
@@ -163,6 +176,50 @@ class TestStats(unittest.TestCase):
         self.assertEqual(s["even_count"], 3)
         self.assertEqual(s["big_count"], 0)
         self.assertEqual(s["small_count"], 6)
+
+    def test_stats_prime_and_consecutive(self):
+        # ticket {2,3,5,7,11,13}: all primes (6) ; pairs (2,3) only → 1
+        s = ticket_stats([13, 7, 2, 3, 5, 11])
+        self.assertEqual(s["prime_count"], 6)
+        self.assertEqual(s["consecutive_pairs"], 1)
+
+    def test_stats_no_consecutive(self):
+        s = ticket_stats([2, 8, 14, 20, 26, 32])
+        self.assertEqual(s["consecutive_pairs"], 0)
+
+
+class TestNewFilters(unittest.TestCase):
+    def test_all_tickets_pass_prime_bounds(self):
+        tickets = generate_tickets(
+            previous_draw=[5, 12, 18, 25, 33, 42],
+            exclude_tails=[],
+            key_nums=[7, 17, 27],
+            num_tickets=10,
+            rng=random.Random(2026),
+        )
+        for t in tickets:
+            primes = sum(1 for n in t if n in PRIMES_SET)
+            self.assertGreaterEqual(primes, MIN_PRIME_COUNT, f"too few primes: {t}")
+            self.assertLessEqual(primes, MAX_PRIME_COUNT, f"too many primes: {t}")
+
+    def test_all_tickets_respect_consecutive_cap(self):
+        tickets = generate_tickets(
+            previous_draw=[5, 12, 18, 25, 33, 42],
+            exclude_tails=[],
+            key_nums=[7, 17, 27],
+            num_tickets=10,
+            rng=random.Random(99),
+        )
+        for t in tickets:
+            sorted_t = sorted(t)
+            pairs = sum(
+                1
+                for i in range(len(sorted_t) - 1)
+                if sorted_t[i + 1] - sorted_t[i] == 1
+            )
+            self.assertLessEqual(
+                pairs, MAX_CONSECUTIVE_PAIRS, f"too many consecutive in {t}"
+            )
 
 
 if __name__ == "__main__":

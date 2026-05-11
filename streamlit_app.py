@@ -6,14 +6,19 @@ import random
 
 import streamlit as st
 
+from src.analytics.cost_calc import UNIT_PRICE_TWD, summary as cost_summary
 from src.generator.lotto_picker import (
     ALLOWED_ODD_COUNTS,
     BIG_THRESHOLD,
+    MAX_CONSECUTIVE_PAIRS,
+    MAX_PRIME_COUNT,
     MIN_BIG_COUNT,
+    MIN_PRIME_COUNT,
     POOL_MAX,
     POOL_MIN,
     SUM_MAX,
     SUM_MIN,
+    TICKET_SIZE,
     generate_tickets,
     ticket_stats,
 )
@@ -86,12 +91,14 @@ with st.sidebar:
 
 # --- Sidebar protocol summary -------------------------------------------------
 
-with st.sidebar.expander("📐 過濾濾網規則"):
+with st.sidebar.expander("📐 過濾濾網規則 (v2.0)"):
     st.markdown(
         f"""
 - **和值濾網**：`{SUM_MIN} ≤ sum ≤ {SUM_MAX}`
 - **奇偶濾網**：`奇數 ∈ {sorted(ALLOWED_ODD_COUNTS)}`
 - **防分紅濾網**：`號碼 > {BIG_THRESHOLD} 至少 {MIN_BIG_COUNT} 個`
+- **質數濾網**：`{MIN_PRIME_COUNT} ≤ 質數 ≤ {MAX_PRIME_COUNT}`
+- **連號濾網**：`連號對數 ≤ {MAX_CONSECUTIVE_PAIRS}`
 """
     )
 
@@ -132,6 +139,31 @@ if not tickets:
 
 st.success(f"✅ 已產出 {len(tickets)} 注合格組合（目標 {num_tickets} 注）")
 
+# --- Cost panel: full-wheel reference ---
+_prev_set = set(prev_draw)
+_tail_set = set(tails)
+_phase1 = {
+    n for n in range(POOL_MIN, POOL_MAX + 1)
+    if n not in _prev_set and (n % 10) not in _tail_set
+}
+if drag_nums is not None:
+    _drag_pool = (set(drag_nums) & _phase1) - set(keys)
+else:
+    _drag_pool = _phase1 - set(keys)
+
+try:
+    cs = cost_summary(len(keys), len(_drag_pool))
+    c1, c2, c3 = st.columns(3)
+    c1.metric("膽碼 / 拖碼池", f"{len(keys)} / {len(_drag_pool)}")
+    c2.metric(
+        "全包牌注數 C(drag, 6−key)",
+        f"{cs['wheel_ticket_count']:,}",
+        help=f"每注 NT${UNIT_PRICE_TWD}；本工具僅輸出過濾後子集，全包牌數作為上限參考。",
+    )
+    c3.metric("全包牌成本 (NT$)", f"{cs['wheel_cost_twd']:,}")
+except ValueError:
+    pass
+
 col_left, col_right = st.columns([3, 2])
 
 with col_left:
@@ -142,13 +174,16 @@ with col_left:
 
 with col_right:
     st.subheader("📊 每注診斷")
-    header = "| # | sum | odd | even | big | small |\n|---|---|---|---|---|---|\n"
+    header = (
+        "| # | sum | odd | big | prime | consec |\n"
+        "|---|---|---|---|---|---|\n"
+    )
     rows = []
     for idx, ticket in enumerate(tickets, start=1):
         s = ticket_stats(ticket)
         rows.append(
-            f"| {idx} | {s['sum']} | {s['odd_count']} | {s['even_count']} "
-            f"| {s['big_count']} | {s['small_count']} |"
+            f"| {idx} | {s['sum']} | {s['odd_count']} | {s['big_count']} "
+            f"| {s['prime_count']} | {s['consecutive_pairs']} |"
         )
     st.markdown(header + "\n".join(rows))
 
