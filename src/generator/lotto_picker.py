@@ -101,6 +101,7 @@ def generate_tickets(
     # Manual overrides (UI fallback per §3)
     manual_keys: Iterable[int] | None = None,
     manual_excluded_tails: Iterable[int] | None = None,
+    manual_excluded_numbers: Iterable[int] | None = None,
     manual_sum_range: tuple[int, int] | None = None,
     # Pre-computed analysis (UI passes a cached analysis to avoid re-running)
     precomputed_analysis: HistoryAnalysis | None = None,
@@ -152,6 +153,13 @@ def generate_tickets(
         n for n in range(POOL_MIN, POOL_MAX + 1) if (n % 10) not in tail_set
     }
 
+    # Manual per-number exclusion (UI clickable grid)
+    if manual_excluded_numbers is not None:
+        excl_nums = _ensure_int_list("manual_excluded_numbers", manual_excluded_numbers)
+        _validate_range("manual_excluded_numbers", excl_nums, POOL_MIN, POOL_MAX)
+        _validate_unique("manual_excluded_numbers", excl_nums)
+        pool -= set(excl_nums)
+
     if manual_keys is not None:
         keys = _ensure_int_list("manual_keys", manual_keys)
         _validate_range("manual_keys", keys, POOL_MIN, POOL_MAX)
@@ -168,6 +176,12 @@ def generate_tickets(
             )
 
     key_set = set(keys)
+    if manual_excluded_numbers is not None:
+        conflict = key_set & set(excl_nums)
+        if conflict:
+            raise ValueError(
+                f"keys {sorted(conflict)} conflict with manual_excluded_numbers"
+            )
     drag_candidates = pool - key_set
     needed = TICKET_SIZE - len(keys)
     if len(drag_candidates) < needed:

@@ -160,6 +160,30 @@ with st.sidebar:
             default=[],
         )
 
+    st.subheader("🚫 排除特定號碼")
+    st.caption("點擊號碼即可加入/移除排除清單；空 = 不排除任何號碼。")
+    if hasattr(st, "pills"):
+        manual_excluded_numbers = st.pills(
+            "點擊號碼",
+            options=list(range(POOL_MIN, POOL_MAX + 1)),
+            selection_mode="multi",
+            default=[],
+            format_func=lambda n: f"{n:02d}",
+            label_visibility="collapsed",
+        )
+    else:
+        manual_excluded_numbers = st.multiselect(
+            "排除號碼（升級 streamlit≥1.39 可享按鈕點選 UI）",
+            options=list(range(POOL_MIN, POOL_MAX + 1)),
+            default=[],
+            format_func=lambda n: f"{n:02d}",
+        )
+    if manual_excluded_numbers:
+        st.caption(
+            f"已排除 **{len(manual_excluded_numbers)}** 顆："
+            + ", ".join(f"{n:02d}" for n in sorted(manual_excluded_numbers))
+        )
+
     sum_mode = st.radio(
         "和值區間", ["動態 SMA", "手動"], horizontal=True
     )
@@ -247,6 +271,7 @@ try:
         num_tickets=num_tickets,
         manual_keys=manual_keys if manual_keys else None,
         manual_excluded_tails=manual_excluded_tails,
+        manual_excluded_numbers=list(manual_excluded_numbers) if manual_excluded_numbers else None,
         manual_sum_range=manual_sum_range,
         precomputed_analysis=analysis,
         rng=rng,

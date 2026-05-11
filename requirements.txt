@@ -1,4 +1,4 @@
-streamlit>=1.32
+streamlit>=1.39
 # Below are offline-only deps for src/scraper (NOT imported by streamlit_app.py).
 # The live app reads `data/lotto649.csv` committed to the repo, or accepts
 # manual upload via the UI; it never makes outbound API calls.
