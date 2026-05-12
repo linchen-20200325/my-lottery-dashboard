@@ -47,7 +47,7 @@ my-lottery-2026/
 - [x] Streamlit UI v5.0（cache + fallback + 滑桿 + 動態/手動覆寫）
 - [x] 回測指標 (`src/analytics/metrics.py`)
 - [x] 倉庫內附 50 期合成樣本（CSV）
-- [ ] 部署 Streamlit Cloud（手動）
+- [x] 部署 Streamlit Cloud（手動）  ✅ 2026-05-12 上線、UI 全綠
 - [ ] 用真實 500 期資料覆蓋合成樣本（本機 scraper）
 
 ## 常用指令
