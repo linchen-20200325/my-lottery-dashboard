@@ -52,8 +52,10 @@ my-lottery-2026/
 
 ## 後續規劃 (Phase 6 — Future Work)
 - [ ] **爬蟲自動更新歷史資料**
-  - 目標：每週自動抓最新開獎、增量寫入 `data/lotto649.csv`、push 到 GitHub → Streamlit Cloud 自動 redeploy
-  - 候選方案：GitHub Actions cron（每週日深夜跑 scraper → `git commit` → `git push`），免本機常駐
+  - 目標：開獎當晚自動抓最新開獎、增量寫入 `data/lotto649.csv`、push 到 GitHub → Streamlit Cloud 自動 redeploy
+  - 開獎時程：**每週二、週五**；抓檔時間 **22:00 (GMT+8)**
+  - GitHub Actions cron：`0 14 * * 2,5`（UTC 14:00 = 台北 22:00，週二/週五）
+  - 候選方案：GitHub Actions workflow `pip install → scraper → diff → git commit → git push`，免本機常駐
   - 限制：Streamlit Cloud 端**不發外部 API**（協定 §6「果斷棄爬」），爬蟲須跑在 GitHub Actions runner、非 cloud runtime
   - 防呆：scraper 抓不到時不覆蓋（保留 last good CSV），失敗時開 issue 通知
   - 觀察點：`taiwanlottery` 套件對 Actions runner 是否會限流（首次 dry run 須驗證）
