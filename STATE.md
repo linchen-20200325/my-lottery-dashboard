@@ -25,8 +25,8 @@ my-lottery-2026/
 │   │   ├── backtest.py                    # 離線命中率回測 CLI
 │   │   └── metrics.py                     # compression_rate + survival_rate (§3)
 │   └── scraper/lotto649_downloader.py     # 離線抓檔（用 taiwanlottery 套件）
-├── data/lotto649.csv                      # 倉庫內附歷史資料（合成樣本/真實）
-├── tests/                                 # 53 個單元測試
+├── data/lotto649.csv                      # 倉庫內附歷史資料（真實 518 期 / 2026-05-12 截止）
+├── tests/                                 # 57 個單元測試
 ├── requirements.txt
 ├── CLAUDE.md
 └── STATE.md
@@ -48,7 +48,7 @@ my-lottery-2026/
 - [x] 回測指標 (`src/analytics/metrics.py`)
 - [x] 倉庫內附 50 期合成樣本（CSV）
 - [x] 部署 Streamlit Cloud（手動）  ✅ 2026-05-12 上線、UI 全綠
-- [ ] 用真實 500 期資料覆蓋合成樣本（本機 scraper）
+- [x] 用真實 518 期資料覆蓋合成樣本  ✅ 2026-05-12（compression 14.99% / survival 14.86%）
 
 ## 常用指令
 ```bash
