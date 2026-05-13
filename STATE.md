@@ -1,5 +1,9 @@
 # STATE — my-lottery-2026
 
+> 📐 **架構藍圖** → [`ARCHITECTURE.md`](./ARCHITECTURE.md)（模組依賴、資料流、五階段細節、CI 設計）
+> 📜 **治理協議** → [`CLAUDE.md`](./CLAUDE.md)
+> 本檔僅維持「**當前進度 + 常用指令**」（協定 §1 冷熱分離）
+
 ## 專案目標
 大樂透 (6/49) 量化訊號儀表板 (v5.0)。Streamlit Cloud 線上 App。
 Signal-Driven · Defensive Architecture · Performance First。EV<0 認知；不預測。
@@ -27,23 +31,22 @@ my-lottery-2026/
 │   └── scraper/lotto649_downloader.py     # 離線抓檔（用 taiwanlottery 套件）
 ├── data/lotto649.csv                      # 倉庫內附歷史資料（真實 518 期 / 2026-05-12 截止）
 ├── tests/                                 # 57 個單元測試
+├── .github/workflows/update-history.yml   # CI 自動抓檔 (Phase 6, 週二/五 22:00)
 ├── requirements.txt
 ├── CLAUDE.md
-└── STATE.md
+├── ARCHITECTURE.md                        # 系統架構藍圖 (冷資料)
+└── STATE.md                               # 當前進度 (熱資料)
 ```
 
-## 演算法 v5.0（協定 §6 摘要）
-- **Phase 1 動態訊號** — Z-Score 冷熱：熱 `≤ max(2, μ−0.5σ)` / 冷 `≥ μ+1.5σ`；動態和值 `SMA(10) ± 30`，clamp `[90, 210]`；過熱/死寂尾數
-- **Phase 2 Cache + 優雅降級** — `@st.cache_data(ttl=3600)`；失敗 swap `STATIC_FALLBACK_ANALYSIS` (sum 120-180、無排除) + `st.warning`
-- **Phase 3 矩陣均勻化** — `random.shuffle(combinations)`
-- **Phase 4 五大濾網** — prime ∈ [1,3], consec_pairs ≤ 2, **動態 sum**, odd ∈ {2,3,4}, big(>31)≥3
-- **§3 回測指標** — `compression_rate`（14M 組合留多少）/ `survival_rate`（過去開獎被殺率）
+## 演算法 v5.0
+五階段（訊號 → cache + 降級 → shuffle → 五濾網）+ §3 回測指標。
+**詳細**請見 [`ARCHITECTURE.md` §4-5](./ARCHITECTURE.md)。
 
 ## 目前進度
 - [x] Core Protocol v2.0 + §6 Domain v5.0
 - [x] 歷史抓檔（`taiwanlottery` 套件）
 - [x] Z-Score 動態訊號引擎 (`history_engine.py` v5.0)
-- [x] 五階段五濾網選號核心 (`lotto_picker.py` v5.0) + 53 單元測試
+- [x] 五階段五濾網選號核心 (`lotto_picker.py` v5.0) + 57 單元測試
 - [x] Streamlit UI v5.0（cache + fallback + 滑桿 + 動態/手動覆寫）
 - [x] 回測指標 (`src/analytics/metrics.py`)
 - [x] 倉庫內附 50 期合成樣本（CSV）
