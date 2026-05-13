@@ -162,10 +162,16 @@ with st.sidebar:
 
     st.subheader("🚫 排除特定號碼")
     st.caption("點擊號碼即可加入/移除排除清單；空 = 不排除任何號碼。")
+    _key_set = set(manual_keys) if manual_keys else set()
+    _excl_options = [n for n in range(POOL_MIN, POOL_MAX + 1) if n not in _key_set]
+    if _key_set:
+        st.caption(
+            f"（已自動隱藏手動膽碼 {sorted(_key_set)}，避免與排除清單衝突）"
+        )
     if hasattr(st, "pills"):
         manual_excluded_numbers = st.pills(
             "點擊號碼",
-            options=list(range(POOL_MIN, POOL_MAX + 1)),
+            options=_excl_options,
             selection_mode="multi",
             default=[],
             format_func=lambda n: f"{n:02d}",
@@ -174,7 +180,7 @@ with st.sidebar:
     else:
         manual_excluded_numbers = st.multiselect(
             "排除號碼（升級 streamlit≥1.39 可享按鈕點選 UI）",
-            options=list(range(POOL_MIN, POOL_MAX + 1)),
+            options=_excl_options,
             default=[],
             format_func=lambda n: f"{n:02d}",
         )
@@ -264,6 +270,14 @@ st.caption(
 )
 
 # --- Generate ---
+if manual_keys and manual_excluded_numbers:
+    _conflict = sorted(set(manual_keys) & set(manual_excluded_numbers))
+    if _conflict:
+        st.error(
+            f"參數衝突：號碼 {_conflict} 同時被列為膽碼與排除清單，請擇一。"
+        )
+        st.stop()
+
 rng = random.Random(seed) if seed else None
 try:
     tickets, _ = generate_tickets(

@@ -1,0 +1,72 @@
+name: Update Lottery History
+
+on:
+  schedule:
+    # 每週二、週五 22:00 (GMT+8) = 14:00 UTC，開獎當晚自動抓
+    - cron: '0 14 * * 2,5'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: update-history
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run scraper (incremental, 50 periods)
+        run: python -m src.scraper.lotto649_downloader --periods 50
+
+      - name: Detect CSV changes
+        id: diff
+        run: |
+          if git diff --quiet data/lotto649.csv; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No new draws — skipping commit."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "CSV updated:"
+            git diff --stat data/lotto649.csv
+          fi
+
+      - name: Commit and push to main
+        if: steps.diff.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/lotto649.csv
+          git commit -m "data: 自動更新樂透歷史 ($(date -u +'%Y-%m-%d %H:%M UTC'))"
+          git push origin main
+
+      - name: Open issue on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh issue create \
+            --title "[auto-update] 樂透歷史抓檔失敗 $(date -u +'%Y-%m-%d')" \
+            --body "Workflow run: $RUN_URL
+
+          常見原因：
+          - taiwanlottery 套件被官方 API 擋
+          - requirements.txt 依賴變動
+          - GitHub Actions runner 暫時性問題
+
+          手動補救：本機執行 \`python -m src.scraper.lotto649_downloader --periods 50\` 並 commit \`data/lotto649.csv\`。"
