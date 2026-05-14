@@ -384,11 +384,46 @@ s2.caption(
     f"過熱：{analysis.overheated_tails or '—'} · 死寂：{analysis.dormant_tails or '—'}"
 )
 
+# --- Silent-drop notice: auto-key collided with user exclusion ---
+if not manual_keys and manual_excluded_numbers:
+    _silent_dropped = sorted(set(analysis.auto_keys) & set(manual_excluded_numbers))
+    if _silent_dropped:
+        st.caption(
+            f"ℹ️ 自動膽碼 {_silent_dropped} 與你的排除清單衝突 — 已自動移除（不影響選號）。"
+        )
+
 if not tickets:
-    st.warning("通過五大濾網的組合為 0。放寬閾值或縮少手動限制再試。")
+    st.warning(
+        "通過五大濾網的組合為 0；Round 2 disjoint fallback 亦無解。"
+        "請放寬閾值或縮少手動限制再試。"
+    )
     st.stop()
 
-st.success(f"✅ 已產出 {len(tickets)} 注合格組合（目標 {num_tickets} 注）")
+# Detect Round 2 fallback tickets (those that don't carry the effective keys)
+_effective_keys = (
+    set(manual_keys) if manual_keys
+    else set(analysis.auto_keys) - set(manual_excluded_numbers or [])
+)
+_r1 = [t for t in tickets if _effective_keys.issubset(t)] if _effective_keys else tickets
+_r2 = [t for t in tickets if not _effective_keys.issubset(t)] if _effective_keys else []
+
+if len(tickets) < num_tickets:
+    if _r2:
+        st.success(
+            f"✅ 已產出 **{len(tickets)} / {num_tickets}** 注 "
+            f"（Round 1: {len(_r1)} 注 ｜ Round 2 disjoint 補齊: {len(_r2)} 注）"
+        )
+        st.caption(
+            "💡 Round 2 為 disjoint fallback — 票面不含膽碼，且與 Round 1 票"
+            "完全不共號（六顆主號互斥）。"
+        )
+    else:
+        st.warning(
+            f"⚠️ 已產出 **{len(tickets)} / {num_tickets}** 注 "
+            f"（濾網太嚴或排除過多 → 連 Round 2 disjoint 補齊都無解）"
+        )
+else:
+    st.success(f"✅ 已產出 {len(tickets)} 注合格組合（目標 {num_tickets} 注）")
 
 # --- Cost panel ---
 keys_used = manual_keys if manual_keys else analysis.auto_keys

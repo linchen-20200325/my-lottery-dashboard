@@ -3,6 +3,7 @@
 import random
 import unittest
 
+from src.generator.history_engine import HistoryAnalysis
 from src.generator.lotto_picker import (
     ALLOWED_ODD_COUNTS,
     BIG_THRESHOLD,
@@ -17,6 +18,22 @@ from src.generator.lotto_picker import (
     generate_tickets,
     ticket_stats,
 )
+
+
+def _custom_analysis(*, auto_keys: list[int], sum_lo: int = 120, sum_hi: int = 180) -> HistoryAnalysis:
+    """Test helper: build a deterministic HistoryAnalysis with given auto_keys."""
+    return HistoryAnalysis(
+        hot=auto_keys[:1], warm=[], cold=auto_keys[1:2],
+        gaps={n: 0 for n in range(1, 50)},
+        gap_mean=5.0, gap_std=2.0,
+        hot_threshold=2.0, cold_threshold=15.0,
+        sum_sma=float((sum_lo + sum_hi) // 2),
+        sum_min_dynamic=sum_lo, sum_max_dynamic=sum_hi,
+        tail_counts_recent={t: 0 for t in range(10)},
+        overheated_tails=[], dormant_tails=[],
+        exclude_tails=[], auto_keys=sorted(auto_keys),
+        is_fallback=False,
+    )
 
 # A diverse 30-period synthetic history (enough for layering tests)
 HISTORY = [
@@ -194,6 +211,98 @@ class TestEdgeCases(unittest.TestCase):
                 manual_keys=[3],
                 manual_excluded_tails=list(range(10)),  # excludes everything
             )
+
+
+class TestSilentDropAndDisjoint(unittest.TestCase):
+    """v6: auto-key conflicts silently dropped; disjoint Round 2 fills shortfall."""
+
+    def test_auto_key_conflict_silently_dropped(self):
+        # Auto-suggested keys are [7, 33]; user excludes 33.
+        # Engine must drop 33 from keys (NOT raise) and keep producing.
+        analysis = _custom_analysis(auto_keys=[7, 33])
+        tickets, _ = generate_tickets(
+            history_draws=HISTORY,
+            num_tickets=3,
+            manual_excluded_numbers=[33],
+            precomputed_analysis=analysis,
+            rng=random.Random(7),
+        )
+        self.assertGreater(len(tickets), 0)
+        for t in tickets:
+            self.assertNotIn(33, t)
+            # Remaining auto-key 7 appears in every Round-1 ticket.
+            self.assertIn(7, t)
+
+    def test_all_auto_keys_dropped_falls_back_to_no_keys(self):
+        # All auto-suggested keys conflict with user's exclusion.
+        # Engine enters no-膽碼 mode (key_set empty) and still produces.
+        analysis = _custom_analysis(auto_keys=[7, 33])
+        tickets, _ = generate_tickets(
+            history_draws=HISTORY,
+            num_tickets=3,
+            manual_excluded_numbers=[7, 33],
+            precomputed_analysis=analysis,
+            rng=random.Random(7),
+        )
+        self.assertGreater(len(tickets), 0)
+        for t in tickets:
+            self.assertNotIn(7, t)
+            self.assertNotIn(33, t)
+
+    def test_manual_keys_conflict_still_raises(self):
+        # Existing test already covers this in TestManualOverride; re-assert here
+        # for clarity that the silent-drop applies ONLY to auto-keys, not manual.
+        with self.assertRaises(ValueError):
+            generate_tickets(
+                history_draws=HISTORY,
+                num_tickets=3,
+                manual_keys=[7, 33],
+                manual_excluded_numbers=[33],
+            )
+
+    def test_shortfall_triggers_disjoint_round2(self):
+        # Impossibly narrow sum range with a key forces Round 1 to yield 0;
+        # Round 2 sub-B (static 90-210) fills with disjoint tickets sans key.
+        tickets, _ = generate_tickets(
+            history_draws=HISTORY,
+            num_tickets=3,
+            manual_keys=[7],
+            manual_sum_range=(6, 21),  # ticket including 7 must sum ≥ 7+1+2+3+4+5=22
+            rng=random.Random(11),
+        )
+        self.assertGreaterEqual(len(tickets), 1, "Round 2 should have filled some")
+        for t in tickets:
+            # Round 2 tickets do NOT carry the key (key is "used" by R1's zero output's pool reservation)
+            self.assertNotIn(7, t)
+        # All Round 2 tickets must be pairwise disjoint
+        for i in range(len(tickets)):
+            for j in range(i + 1, len(tickets)):
+                self.assertFalse(
+                    set(tickets[i]) & set(tickets[j]),
+                    f"Round 2 tickets {tickets[i]} and {tickets[j]} share numbers",
+                )
+
+    def test_round2_tickets_disjoint_from_round1(self):
+        # Narrow filter forces partial shortfall: R1 yields some, R2 fills rest.
+        # R2 tickets must have ZERO overlap with R1's number footprint.
+        tickets, _ = generate_tickets(
+            history_draws=HISTORY,
+            num_tickets=8,
+            manual_keys=[7],
+            manual_sum_range=(170, 175),  # narrow but feasible
+            rng=random.Random(42),
+        )
+        r1 = [t for t in tickets if 7 in t]
+        r2 = [t for t in tickets if 7 not in t]
+        if r2:  # Only verify if Round 2 actually activated
+            r1_numbers: set[int] = set()
+            for t in r1:
+                r1_numbers |= set(t)
+            for r2t in r2:
+                self.assertFalse(
+                    set(r2t) & r1_numbers,
+                    f"R2 ticket {r2t} overlaps R1 numbers {sorted(r1_numbers)}",
+                )
 
 
 class TestStats(unittest.TestCase):
