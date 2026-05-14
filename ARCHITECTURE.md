@@ -60,9 +60,11 @@
   ③ 離線 scraper 補檔 (taiwanlottery)         ← 備援 2 (本機 or Actions)
                     │
                     ▼
-        src.data.loader.load_csv_file()
+        src.data.loader.load_csv_file()      ← 引擎主路徑 (strict, raises on bad input)
         (extract n1-n6, 忽略日期/特別號)
                     │
+                    ├──→ src.data.loader.preview_recent()  ← UI 驗證副路徑 (lenient, never raises)
+                    │     (含 term/date/special, 主面板頂部展示近 N 期)
                     ▼
         src.generator.history_engine.analyze()
         (1-49 各號遺漏期數 → μ, σ → 冷熱分層)

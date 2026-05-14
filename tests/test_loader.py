@@ -11,6 +11,7 @@ from src.data.loader import (
     load_csv_file,
     load_csv_string,
     load_json_string,
+    preview_recent,
 )
 
 GOOD_CSV = """draw_term,draw_date,n1,n2,n3,n4,n5,n6,special
@@ -77,6 +78,46 @@ class TestAuto(unittest.TestCase):
     def test_routes_to_csv(self):
         draws = load_auto(GOOD_CSV)
         self.assertEqual(len(draws), 2)
+
+
+class TestPreviewRecent(unittest.TestCase):
+    def test_csv_string_first_n_with_metadata(self):
+        preview = preview_recent(GOOD_CSV, limit=5)
+        self.assertEqual(len(preview), 2)
+        self.assertEqual(preview[0]["term"], "115050")
+        self.assertEqual(preview[0]["date"], "2026-05-09")
+        self.assertEqual(preview[0]["nums"], [5, 12, 18, 25, 33, 42])
+        self.assertEqual(preview[0]["special"], "7")
+
+    def test_limit_clamps_to_smaller_count(self):
+        preview = preview_recent(GOOD_CSV, limit=1)
+        self.assertEqual(len(preview), 1)
+        self.assertEqual(preview[0]["term"], "115050")
+
+    def test_empty_input_returns_empty(self):
+        self.assertEqual(preview_recent("", limit=5), [])
+        self.assertEqual(preview_recent("   \n   ", limit=5), [])
+        self.assertEqual(preview_recent(GOOD_CSV, limit=0), [])
+
+    def test_bytes_input_decoded(self):
+        preview = preview_recent(GOOD_CSV.encode("utf-8"), limit=5)
+        self.assertEqual(len(preview), 2)
+
+    def test_json_array_with_term_and_special(self):
+        payload = json.dumps([
+            {"draw": [1, 2, 3, 4, 5, 6], "term": "115050",
+             "date": "2026-05-09", "special": 7},
+        ])
+        preview = preview_recent(payload, limit=5)
+        self.assertEqual(len(preview), 1)
+        self.assertEqual(preview[0]["term"], "115050")
+        self.assertEqual(preview[0]["special"], "7")
+
+    def test_malformed_input_returns_empty(self):
+        # missing n1-n6 columns -> graceful empty (does not raise)
+        self.assertEqual(
+            preview_recent("foo,bar\n1,2\n", limit=5), []
+        )
 
 
 if __name__ == "__main__":
