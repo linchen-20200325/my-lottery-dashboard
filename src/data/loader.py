@@ -100,3 +100,89 @@ def load_auto(text: str) -> list[list[int]]:
     if stripped.startswith("[") or stripped.startswith("{"):
         return load_json_string(text)
     return load_csv_string(text)
+
+
+# --- UI-only helpers (lenient, never raise; for preview pane) -----------------
+
+
+def preview_recent(source: Path | str | bytes, limit: int = 5) -> list[dict]:
+    """Extract latest N rows with display metadata (term/date/nums/special).
+
+    UI helper: returns [] silently on any parse failure so a malformed file
+    doesn't crash the preview pane. The strict `load_csv_*` / `load_json_string`
+    functions remain the source of truth for the generator engine.
+
+    `source` may be a Path, a path-like string, raw CSV/JSON text, or bytes
+    (e.g. from Streamlit's file_uploader).
+    """
+    if limit <= 0:
+        return []
+    try:
+        text = _read_text(source)
+    except (OSError, UnicodeDecodeError):
+        return []
+    stripped = text.lstrip()
+    if not stripped:
+        return []
+    try:
+        if stripped.startswith("[") or stripped.startswith("{"):
+            return _preview_json(text, limit)
+        return _preview_csv(text, limit)
+    except (csv.Error, json.JSONDecodeError, ValueError):
+        return []
+
+
+def _read_text(source: Path | str | bytes) -> str:
+    if isinstance(source, bytes):
+        return source.decode("utf-8", errors="replace")
+    if isinstance(source, Path):
+        return source.read_text(encoding="utf-8")
+    if isinstance(source, str):
+        # Distinguish file path vs raw content: a path can't contain newlines.
+        if "\n" not in source and "\r" not in source:
+            p = Path(source)
+            if p.exists() and p.is_file():
+                return p.read_text(encoding="utf-8")
+        return source
+    raise TypeError(f"unsupported source type: {type(source).__name__}")
+
+
+def _preview_csv(text: str, limit: int) -> list[dict]:
+    rows = list(csv.DictReader(io.StringIO(text)))
+    out: list[dict] = []
+    for row in rows[:limit]:
+        try:
+            nums = [int(row[f"n{k}"]) for k in range(1, TICKET_SIZE + 1)]
+        except (KeyError, ValueError):
+            continue
+        out.append({
+            "term": str(row.get("draw_term") or row.get("term") or "—"),
+            "date": str(row.get("draw_date") or row.get("date") or "—"),
+            "nums": nums,
+            "special": str(row.get("special") or "—"),
+        })
+    return out
+
+
+def _preview_json(text: str, limit: int) -> list[dict]:
+    data = json.loads(text)
+    if not isinstance(data, list):
+        return []
+    out: list[dict] = []
+    for item in data[:limit]:
+        if not isinstance(item, dict):
+            continue
+        nums_raw = item.get("draw") or item.get("numbers")
+        if not isinstance(nums_raw, list) or len(nums_raw) < TICKET_SIZE:
+            continue
+        try:
+            nums = [int(n) for n in nums_raw[:TICKET_SIZE]]
+        except (TypeError, ValueError):
+            continue
+        out.append({
+            "term": str(item.get("term") or "—"),
+            "date": str(item.get("date") or "—"),
+            "nums": nums,
+            "special": str(item.get("special") or "—"),
+        })
+    return out

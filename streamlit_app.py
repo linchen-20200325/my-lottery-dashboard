@@ -14,6 +14,7 @@ from src.data.loader import (
     load_csv_file,
     load_csv_string,
     load_json_string,
+    preview_recent,
 )
 from src.generator.history_engine import (
     DEFAULTS,
@@ -68,6 +69,21 @@ def _load_upload(payload: bytes, name: str) -> list[list[int]]:
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
+def _preview_bundled(limit: int) -> list[dict]:
+    return preview_recent(SAMPLE_CSV_PATH, limit=limit)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _preview_upload(payload: bytes, _name: str, limit: int) -> list[dict]:
+    return preview_recent(payload, limit=limit)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _preview_text(text: str, limit: int) -> list[dict]:
+    return preview_recent(text, limit=limit)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
 def cached_analysis(
     history: list[list[int]],
     hot_sigma: float,
@@ -109,6 +125,11 @@ with st.sidebar:
         uploaded_file = st.file_uploader("上傳檔案", type=["csv", "json"])
     elif source == "貼上文字":
         pasted = st.text_area("貼上 CSV 或 JSON", height=160)
+
+    preview_limit = st.slider(
+        "📋 預覽近 N 期", 1, 20, 5,
+        help="主面板頂部會顯示最近 N 期開獎，用來驗證資料是否正確下載/上傳。",
+    )
 
     st.header("🌡️ Z-Score 冷熱閾值")
     hot_sigma = st.slider(
@@ -222,27 +243,69 @@ with st.sidebar.expander("📐 五大濾網規則"):
 
 # --- Main panel ---------------------------------------------------------------
 
-if not go:
-    st.info("← 設定參數後按『產生選號』。預設使用倉庫內附 50 期合成樣本。")
-    st.stop()
-
-# --- Phase 2: load + analyze with graceful degradation ---
+# --- Phase 2: always-attempt load (graceful degradation; pre-go for preview) ---
 fallback_reason: str | None = None
 history: list[list[int]] = []
+awaiting_input = False
 try:
     if source == "上傳 CSV / JSON":
         if uploaded_file is None:
-            raise HistoryLoadError("尚未上傳檔案")
-        history = _load_upload(uploaded_file.getvalue(), uploaded_file.name)
+            awaiting_input = True
+        else:
+            history = _load_upload(uploaded_file.getvalue(), uploaded_file.name)
     elif source == "貼上文字":
         if not pasted.strip():
-            raise HistoryLoadError("尚未貼上資料")
-        history = load_auto(pasted)
+            awaiting_input = True
+        else:
+            history = load_auto(pasted)
     else:
         history = _load_bundled()
 except (HistoryLoadError, OSError) as exc:
     fallback_reason = f"歷史載入失敗：{exc}"
 
+if fallback_reason:
+    st.warning(
+        f"⚠️ **降級至靜態安全模式**：{fallback_reason}。"
+        f"已套用預設區間 {SUM_MIN}-{SUM_MAX}、無冷熱訊號。"
+    )
+
+st.caption(f"📊 已載入 **{len(history)}** 期歷史資料")
+
+# --- Always-on preview pane (verify download/upload correctness) ---
+if source == "上傳 CSV / JSON" and uploaded_file is not None:
+    preview_rows = _preview_upload(
+        uploaded_file.getvalue(), uploaded_file.name, preview_limit
+    )
+elif source == "貼上文字" and pasted.strip():
+    preview_rows = _preview_text(pasted, preview_limit)
+elif source not in ("上傳 CSV / JSON", "貼上文字"):
+    preview_rows = _preview_bundled(preview_limit)
+else:
+    preview_rows = []
+
+if preview_rows:
+    st.subheader(f"📋 最近 {len(preview_rows)} 期歷史 — 驗證資料")
+    header = (
+        "| 期別 | 日期 | 1 | 2 | 3 | 4 | 5 | 6 | 特別號 |\n"
+        "|---|---|---|---|---|---|---|---|---|\n"
+    )
+    body = "\n".join(
+        "| " + r["term"] + " | " + r["date"] + " | "
+        + " | ".join(f"`{n:02d}`" for n in r["nums"])
+        + " | `" + r["special"] + "` |"
+        for r in preview_rows
+    )
+    st.markdown(header + body)
+elif awaiting_input:
+    st.info("📋 預覽待命中 — 上傳或貼上資料後即可預覽近期開獎。")
+
+st.divider()
+
+if not go:
+    st.info("← 設定參數後按『產生選號』。預設使用倉庫內附歷史資料。")
+    st.stop()
+
+# --- Analyze (post-go, since it depends on sliders) ---
 if history and not fallback_reason:
     try:
         analysis = cached_analysis(
@@ -258,16 +321,10 @@ if history and not fallback_reason:
 else:
     analysis = STATIC_FALLBACK_ANALYSIS
 
-if fallback_reason:
-    st.warning(
-        f"⚠️ **降級至靜態安全模式**：{fallback_reason}。"
-        f"已套用預設區間 {SUM_MIN}-{SUM_MAX}、無冷熱訊號。"
-    )
-
-st.caption(
-    f"📊 已載入 **{len(history) if history else 0}** 期歷史資料 ｜ "
-    f"模式：{'⚠️ 靜態 Fallback' if analysis.is_fallback else '✅ 動態 Signal'}"
-)
+if analysis.is_fallback:
+    st.caption("模式：⚠️ 靜態 Fallback")
+else:
+    st.caption("模式：✅ 動態 Signal")
 
 # --- Generate ---
 if manual_keys and manual_excluded_numbers:
