@@ -30,7 +30,7 @@ my-lottery-2026/
 │   │   └── metrics.py                     # compression_rate + survival_rate (§3)
 │   └── scraper/lotto649_downloader.py     # 離線抓檔（用 taiwanlottery 套件）
 ├── data/lotto649.csv                      # 倉庫內附歷史資料（真實 518 期 / 2026-05-12 截止）
-├── tests/                                 # 63 個單元測試
+├── tests/                                 # 68 個單元測試
 ├── .github/workflows/update-history.yml   # CI 自動抓檔 (Phase 6, 週二/五 22:00)
 ├── requirements.txt
 ├── CLAUDE.md
@@ -46,13 +46,14 @@ my-lottery-2026/
 - [x] Core Protocol v2.0 + §6 Domain v5.0
 - [x] 歷史抓檔（`taiwanlottery` 套件）
 - [x] Z-Score 動態訊號引擎 (`history_engine.py` v5.0)
-- [x] 五階段五濾網選號核心 (`lotto_picker.py` v5.0) + 63 單元測試
+- [x] 五階段五濾網選號核心 (`lotto_picker.py` v6) + 68 單元測試
 - [x] Streamlit UI v5.0（cache + fallback + 滑桿 + 動態/手動覆寫）
 - [x] 回測指標 (`src/analytics/metrics.py`)
 - [x] 倉庫內附 50 期合成樣本（CSV）
 - [x] 部署 Streamlit Cloud（手動）  ✅ 2026-05-12 上線、UI 全綠
 - [x] 用真實 518 期資料覆蓋合成樣本  ✅ 2026-05-12（compression 14.99% / survival 14.86%）
 - [x] UI 最近 N 期歷史預覽（驗證資料正確性，slider 1-20）  ✅ 2026-05-13
+- [x] v6 auto-key silent drop + Phase 4 Round 2 disjoint fallback  ✅ 2026-05-14
 
 ## 後續規劃 (Phase 6 — Future Work)
 - [~] **爬蟲自動更新歷史資料** — YAML 就位，等 merge 至 `main` + 首次 dry run 驗證

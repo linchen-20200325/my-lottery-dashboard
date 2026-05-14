@@ -81,6 +81,34 @@ def _validate_history(draws: Sequence[Sequence[int]]) -> None:
         _validate_unique(f"history_draws[{i}]", ints)
 
 
+def _passes_filters(
+    ticket: tuple[int, ...],
+    s_lo: int,
+    s_hi: int,
+    *,
+    apply_secondary: bool,
+) -> bool:
+    """Apply the v5.0 §6 五大濾網. `apply_secondary=False` ⇒ sum-only (Round 3 fallback)."""
+    if not (s_lo <= sum(ticket) <= s_hi):
+        return False
+    if not apply_secondary:
+        return True
+    odd_count = sum(1 for n in ticket if n % 2 == 1)
+    if odd_count not in ALLOWED_ODD_COUNTS:
+        return False
+    if sum(1 for n in ticket if n > BIG_THRESHOLD) < MIN_BIG_COUNT:
+        return False
+    prime_count = sum(1 for n in ticket if n in PRIMES_SET)
+    if not (MIN_PRIME_COUNT <= prime_count <= MAX_PRIME_COUNT):
+        return False
+    consecutive_pairs = sum(
+        1 for i in range(TICKET_SIZE - 1) if ticket[i + 1] - ticket[i] == 1
+    )
+    if consecutive_pairs > MAX_CONSECUTIVE_PAIRS:
+        return False
+    return True
+
+
 # --- Core algorithm -----------------------------------------------------------
 
 
@@ -154,6 +182,7 @@ def generate_tickets(
     }
 
     # Manual per-number exclusion (UI clickable grid)
+    excl_nums: list[int] = []
     if manual_excluded_numbers is not None:
         excl_nums = _ensure_int_list("manual_excluded_numbers", manual_excluded_numbers)
         _validate_range("manual_excluded_numbers", excl_nums, POOL_MIN, POOL_MAX)
@@ -168,22 +197,27 @@ def generate_tickets(
             raise ValueError(
                 f"manual_keys must contain {MIN_KEY_NUMS}-{MAX_KEY_NUMS} numbers"
             )
+        key_set = set(keys)
+        # Manual conflict → explicit user error (UI also catches this upstream).
+        if manual_excluded_numbers is not None:
+            conflict = key_set & set(excl_nums)
+            if conflict:
+                raise ValueError(
+                    f"keys {sorted(conflict)} conflict with manual_excluded_numbers"
+                )
     else:
+        # Auto-key path: silently drop any auto-suggested key that the user
+        # has excluded. Empty key_set is tolerated (no-膽碼 fallback mode).
         keys = list(analysis.auto_keys)
-        if not (MIN_KEY_NUMS <= len(keys) <= MAX_KEY_NUMS):
+        if len(keys) > MAX_KEY_NUMS:
             raise ValueError(
-                f"auto_keys yielded {len(keys)}; widen thresholds or pass manual_keys"
+                f"auto_keys yielded {len(keys)} > max {MAX_KEY_NUMS}"
             )
+        key_set = set(keys) - set(excl_nums)
+        keys = sorted(key_set)
 
-    key_set = set(keys)
-    if manual_excluded_numbers is not None:
-        conflict = key_set & set(excl_nums)
-        if conflict:
-            raise ValueError(
-                f"keys {sorted(conflict)} conflict with manual_excluded_numbers"
-            )
     drag_candidates = pool - key_set
-    needed = TICKET_SIZE - len(keys)
+    needed = TICKET_SIZE - len(key_set)
     if len(drag_candidates) < needed:
         raise ValueError(
             f"insufficient drag candidates: need {needed}, "
@@ -205,27 +239,58 @@ def generate_tickets(
     else:
         s_lo, s_hi = analysis.sum_min_dynamic, analysis.sum_max_dynamic
 
+    # Round 1: standard 5-filter cascade with ticket-level uniqueness.
     results: list[tuple[int, ...]] = []
+    seen: set[tuple[int, ...]] = set()
     for combo in all_combos:
-        ticket = tuple(sorted(key_set.union(combo)))
-        if not (s_lo <= sum(ticket) <= s_hi):
-            continue
-        odd_count = sum(1 for n in ticket if n % 2 == 1)
-        if odd_count not in ALLOWED_ODD_COUNTS:
-            continue
-        if sum(1 for n in ticket if n > BIG_THRESHOLD) < MIN_BIG_COUNT:
-            continue
-        prime_count = sum(1 for n in ticket if n in PRIMES_SET)
-        if not (MIN_PRIME_COUNT <= prime_count <= MAX_PRIME_COUNT):
-            continue
-        consecutive_pairs = sum(
-            1 for i in range(TICKET_SIZE - 1) if ticket[i + 1] - ticket[i] == 1
-        )
-        if consecutive_pairs > MAX_CONSECUTIVE_PAIRS:
-            continue
-        results.append(ticket)
         if len(results) >= num_tickets:
             break
+        ticket = tuple(sorted(key_set.union(combo)))
+        if ticket in seen:
+            continue
+        if not _passes_filters(ticket, s_lo, s_hi, apply_secondary=True):
+            continue
+        results.append(ticket)
+        seen.add(ticket)
+
+    # Round 2 (disjoint fallback): only triggers when Round 1 fell short.
+    # Each new ticket's 6 numbers must NOT overlap with ANY prior ticket's
+    # numbers. Three sub-rounds progressively relax the sum/secondary filters:
+    #   sub-A: dynamic sum + full 5 filters
+    #   sub-B: static 90-210     + full 5 filters
+    #   sub-C: no sum bounds     + no secondary filters
+    # Trade-off: Round 2 tickets cannot include keys (keys are "used" already
+    # by Round 1 tickets). This is the documented cost of the disjoint mode.
+    if len(results) < num_tickets:
+        used_numbers: set[int] = set()
+        for t in results:
+            used_numbers |= set(t)
+        remaining = pool - used_numbers
+        if len(remaining) >= TICKET_SIZE:
+            round2_combos = list(combinations(sorted(remaining), TICKET_SIZE))
+            rng.shuffle(round2_combos)
+            sub_rounds = (
+                ((s_lo, s_hi), True),
+                ((SUM_MIN, SUM_MAX), True),
+                ((TICKET_SIZE * POOL_MIN, TICKET_SIZE * POOL_MAX), False),
+            )
+            for (sub_lo, sub_hi), apply_full in sub_rounds:
+                if len(results) >= num_tickets:
+                    break
+                for combo in round2_combos:
+                    if len(results) >= num_tickets:
+                        break
+                    combo_set = set(combo)
+                    if combo_set & used_numbers:
+                        continue
+                    ticket = tuple(sorted(combo))
+                    if ticket in seen:
+                        continue
+                    if not _passes_filters(ticket, sub_lo, sub_hi, apply_secondary=apply_full):
+                        continue
+                    results.append(ticket)
+                    seen.add(ticket)
+                    used_numbers |= combo_set
 
     return results, analysis
 
