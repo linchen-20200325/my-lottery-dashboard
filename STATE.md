@@ -56,15 +56,17 @@ my-lottery-2026/
 - [x] v6 auto-key silent drop + Phase 4 Round 2 disjoint fallback  ✅ 2026-05-14
 
 ## 後續規劃 (Phase 6 — Future Work)
-- [~] **爬蟲自動更新歷史資料** — workflow 已上 main；scraper v3.1 OK；CI **改 PR 流程 v3.2** 繞 branch protection，待手動觸發驗證
+- [~] **爬蟲自動更新歷史資料** — workflow + scraper 多輪疊代修復；待手動觸發驗證 v3.3 全鏈打通
   - 開獎時程：**每週二、週五**；抓檔時間 **22:00 (GMT+8)** → cron `0 14 * * 2,5`
-  - 實作：`.github/workflows/update-history.yml`
-  - **2026-05-15 失敗根因**：`taiwanlottery` PyPI wrapper 無 UA / retry / 診斷 log，官方 API 回非 JSON 時直接炸 `JSONDecodeError`
-  - **v3.1 修復 (scraper)**：直打 `api.taiwanlottery.com`，加 Mozilla UA + Referer + `urllib3.Retry`（429/5xx）+ JSON-decode 外層 retry（3 次指數 backoff）+ 失敗時記錄 status / content-type / body preview
-  - **2026-05-16 第二層失敗根因**：v3.1 scraper 跑通了（綠燈），但 `git push origin main` 步驟被 **main branch protection 擋**（issue #11 標題誤導為「抓檔失敗」實際是推送失敗）
-  - **v3.2 修復 (workflow)**：改 PR 流程 — 建分支 `auto/data-update-{ts}` → push → `gh pr create` → `gh pr merge --squash --auto --delete-branch`；加 `pull-requests: write` 權限；失敗 issue 排查清單也分 scraper vs PR 兩階段
-  - 防呆：scraper 抓不到拋 RuntimeError、CSV 不覆蓋；`git diff --quiet` 偵測無變動則跳過建 PR；auto-merge 失敗自動 fallback 為直接 merge / 留 PR 待手動
-  - 待驗證：v3.2 上 main 後，按 sidebar「🚀 觸發 GitHub Actions 抓檔」→ 確認自動產 PR + auto-merge 成功 + CSV 補上 5/15 期 2447；無誤後此項打 `[x]`
+  - 實作：`.github/workflows/update-history.yml` + `src/scraper/lotto649_downloader.py`
+  - **第一層 (v3.0 → v3.1)**：舊 `taiwanlottery` PyPI wrapper 無 UA/retry/log → 直打 `api.taiwanlottery.com` + Mozilla UA + Referer + `urllib3.Retry` (429/5xx) + JSON-decode 外層 retry
+  - **第二層 (v3.1 → v3.2)**：v3.1 scraper 通了但 `git push origin main` 被 main branch protection 擋 → 改 PR 流程（建分支 → `gh pr create` → `gh pr merge --squash --auto`）
+  - **第三層 (v3.2 → v3.3)**：v3.2 跑出兩個新 bug：
+    1. **Scraper dedup bug** — 官方 API 改用新期別編碼 (e.g. `115000053` 取代 `2447`)，舊 dedup key 用 `draw_term` → 同一期出兩列。**修復**：`download()` 改用 canonical `draw_date` 比對新 fetched 與既有 CSV，已存在日期跳過；既有 CSV 列**永不覆蓋**（保留歷史 as-is）
+    2. **Workflow `set -e` brittleness** — `PR_URL=$(gh pr create ...)` 失敗時 set -e 直接 kill，連 fallback 也吃不到。**修復**：每個關鍵命令獨立錯誤 trap，PR 建立失敗會把 stderr 印到 log；merge fallback 改 if/elif 鏈確保 step 一定綠燈
+  - 防呆：existing 列即便 date 欄錯亂也保留；`if not fetched` raise；`git diff --quiet` 跳過無變動
+  - 測試：87 個 unit tests 全綠（含新增 `test_no_duplicate_when_terms_differ_but_date_matches` 與 `test_existing_rows_unchanged_even_if_malformed`）
+  - 待驗證：v3.3 上 main 後，按 sidebar「🚀 觸發 GitHub Actions 抓檔」→ 確認自動產 PR + auto-merge + CSV 只新增 5/15 期一列、518 期不變動；無誤後此項打 `[x]`
 
 ## 常用指令
 ```bash
