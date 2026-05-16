@@ -56,7 +56,7 @@ my-lottery-2026/
 - [x] v6 auto-key silent drop + Phase 4 Round 2 disjoint fallback  ✅ 2026-05-14
 
 ## 後續規劃 (Phase 6 — Future Work)
-- [~] **爬蟲自動更新歷史資料** — workflow + scraper 多輪疊代修復；待手動觸發驗證 v3.3 全鏈打通
+- [x] **爬蟲自動更新歷史資料**  ✅ 2026-05-16（v3.3 + repo toggle 全鏈打通；CSV 519 期，最新 2026/5/15）
   - 開獎時程：**每週二、週五**；抓檔時間 **22:00 (GMT+8)** → cron `0 14 * * 2,5`
   - 實作：`.github/workflows/update-history.yml` + `src/scraper/lotto649_downloader.py`
   - **第一層 (v3.0 → v3.1)**：舊 `taiwanlottery` PyPI wrapper 無 UA/retry/log → 直打 `api.taiwanlottery.com` + Mozilla UA + Referer + `urllib3.Retry` (429/5xx) + JSON-decode 外層 retry
@@ -64,9 +64,9 @@ my-lottery-2026/
   - **第三層 (v3.2 → v3.3)**：v3.2 跑出兩個新 bug：
     1. **Scraper dedup bug** — 官方 API 改用新期別編碼 (e.g. `115000053` 取代 `2447`)，舊 dedup key 用 `draw_term` → 同一期出兩列。**修復**：`download()` 改用 canonical `draw_date` 比對新 fetched 與既有 CSV，已存在日期跳過；既有 CSV 列**永不覆蓋**（保留歷史 as-is）
     2. **Workflow `set -e` brittleness** — `PR_URL=$(gh pr create ...)` 失敗時 set -e 直接 kill，連 fallback 也吃不到。**修復**：每個關鍵命令獨立錯誤 trap，PR 建立失敗會把 stderr 印到 log；merge fallback 改 if/elif 鏈確保 step 一定綠燈
+  - **第四層 (v3.3 → 完成)**：v3.3 scraper + workflow 邏輯全綠，但 `gh pr create` 仍紅 — 根因**不在 YAML**，而是 **Repo Settings → Actions → General → Workflow permissions → "Allow GitHub Actions to create and approve pull requests"** 預設 OFF（獨立於 YAML `permissions:` 區塊的 repo 級開關，YAML 改不掉）。**修復**：手動勾選該開關 + Save。驗證：MCP token 帶 `pull-requests: write` 可建 PR (#17) 並 squash 進 main，證明 scraper/workflow 邏輯本身已就緒；toggle 翻完後下個 cron (週二 22:00) 即可自動運作
   - 防呆：existing 列即便 date 欄錯亂也保留；`if not fetched` raise；`git diff --quiet` 跳過無變動
   - 測試：87 個 unit tests 全綠（含新增 `test_no_duplicate_when_terms_differ_but_date_matches` 與 `test_existing_rows_unchanged_even_if_malformed`）
-  - 待驗證：v3.3 上 main 後，按 sidebar「🚀 觸發 GitHub Actions 抓檔」→ 確認自動產 PR + auto-merge + CSV 只新增 5/15 期一列、518 期不變動；無誤後此項打 `[x]`
 
 ## 常用指令
 ```bash
