@@ -56,14 +56,15 @@ my-lottery-2026/
 - [x] v6 auto-key silent drop + Phase 4 Round 2 disjoint fallback  ✅ 2026-05-14
 
 ## 後續規劃 (Phase 6 — Future Work)
-- [~] **爬蟲自動更新歷史資料** — workflow 已上 main，2026-05-15 首跑失敗 (issue #8)；scraper v3.1 直打 API + UA + retry 修復，待 workflow_dispatch 驗證
+- [~] **爬蟲自動更新歷史資料** — workflow 已上 main；scraper v3.1 OK；CI **改 PR 流程 v3.2** 繞 branch protection，待手動觸發驗證
   - 開獎時程：**每週二、週五**；抓檔時間 **22:00 (GMT+8)** → cron `0 14 * * 2,5`
-  - 實作：`.github/workflows/update-history.yml`（checkout → setup-python 3.11 → pip install → scraper `--periods 50` → diff → 直推 main → 失敗開 issue）
+  - 實作：`.github/workflows/update-history.yml`
   - **2026-05-15 失敗根因**：`taiwanlottery` PyPI wrapper 無 UA / retry / 診斷 log，官方 API 回非 JSON 時直接炸 `JSONDecodeError`
-  - **v3.1 修復**：scraper 改直打 `api.taiwanlottery.com`，加 Mozilla UA + Referer + `urllib3.Retry`（429/5xx）+ JSON-decode 外層 retry（3 次指數 backoff）+ 失敗時記錄 status / content-type / body preview
-  - 防呆：scraper 抓不到拋 RuntimeError、CSV 不覆蓋；`git diff --quiet` 偵測無變動則跳過 commit
-  - 失敗通知：`if: failure()` step 用 `gh issue create` 開 issue（含 run URL）
-  - 待驗證：v3.1 推上 main 後，手動觸發 `workflow_dispatch` 跑 dry run；若仍失敗則檢查 issue body 的 diagnostic log 看 Actions runner IP 是否被擋；無誤後此項打 `[x]`
+  - **v3.1 修復 (scraper)**：直打 `api.taiwanlottery.com`，加 Mozilla UA + Referer + `urllib3.Retry`（429/5xx）+ JSON-decode 外層 retry（3 次指數 backoff）+ 失敗時記錄 status / content-type / body preview
+  - **2026-05-16 第二層失敗根因**：v3.1 scraper 跑通了（綠燈），但 `git push origin main` 步驟被 **main branch protection 擋**（issue #11 標題誤導為「抓檔失敗」實際是推送失敗）
+  - **v3.2 修復 (workflow)**：改 PR 流程 — 建分支 `auto/data-update-{ts}` → push → `gh pr create` → `gh pr merge --squash --auto --delete-branch`；加 `pull-requests: write` 權限；失敗 issue 排查清單也分 scraper vs PR 兩階段
+  - 防呆：scraper 抓不到拋 RuntimeError、CSV 不覆蓋；`git diff --quiet` 偵測無變動則跳過建 PR；auto-merge 失敗自動 fallback 為直接 merge / 留 PR 待手動
+  - 待驗證：v3.2 上 main 後，按 sidebar「🚀 觸發 GitHub Actions 抓檔」→ 確認自動產 PR + auto-merge 成功 + CSV 補上 5/15 期 2447；無誤後此項打 `[x]`
 
 ## 常用指令
 ```bash

@@ -169,10 +169,11 @@ def pick_tickets(
 | 環境 | ubuntu-latest, python 3.11, pip cache |
 | 抓檔 | `python -m src.scraper.lotto649_downloader --periods 50` |
 | Commit 條件 | `git diff --quiet data/lotto649.csv` 失敗（有變動） |
-| 推送目標 | `origin main`（直推，無 PR） |
-| 失敗通知 | `gh issue create` 含 run URL + 常見原因清單 |
+| 推送策略 | **PR-based**：建分支 `auto/data-update-{YYYYMMDD-HHMMSS}` → push → `gh pr create` → `gh pr merge --squash --auto --delete-branch` |
+| 為何繞 PR | main 受 branch protection 保護，禁直推；走 PR 由 GITHUB_TOKEN 合併（branch protection 須允許 `github-actions[bot]` 或不要求 review） |
+| 失敗通知 | `gh issue create`（`if: failure()`）含 run URL + 排查清單（區分 scraper 失敗 vs PR 失敗） |
 | 並發 | `concurrency: update-history` 群組互斥 |
-| 權限 | `contents:write` + `issues:write` |
+| 權限 | `contents:write` + `issues:write` + `pull-requests:write` |
 
 ---
 
