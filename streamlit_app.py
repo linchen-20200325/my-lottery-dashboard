@@ -131,6 +131,18 @@ with st.sidebar:
         help="主面板頂部會顯示最近 N 期開獎，用來驗證資料是否正確下載/上傳。",
     )
 
+    st.divider()
+    st.markdown("**🤖 自動更新歷史資料**")
+    st.link_button(
+        "🚀 觸發 GitHub Actions 抓檔",
+        url="https://github.com/CornCorn-2015/my-lottery-2026/actions/workflows/update-history.yml",
+        use_container_width=True,
+    )
+    st.caption(
+        "新分頁打開後，右上角點 **Run workflow** → 選 `main` → 再點 **Run workflow**。"
+        "成功的話 Action bot 會自動補新一期到 CSV、推 main、Cloud 自動 redeploy（1-3 分鐘）。"
+    )
+
     st.header("🌡️ Z-Score 冷熱閾值")
     hot_sigma = st.slider(
         "熱碼倍率 (μ − Nσ)", 0.0, 1.5, DEFAULTS["hot_sigma_factor"], step=0.1
