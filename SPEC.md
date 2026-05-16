@@ -128,8 +128,21 @@ def pick_tickets(
 - `urllib3.Retry` 自動重試 429/500/502/503/504（3 次、backoff 2.0）
 - JSON-decode 外層 retry：3 次（指數 backoff 2/4/8s）、失敗時 log `status / content-type / body preview`
 
-**回傳**：list of `Draw`，已 dedupe by `draw_term`，最多 `periods` 筆。
+**回傳**：list of `Draw`（`draw_date` 已 canonicalize 至 `YYYY/MM/DD`），fetch 內部用 `draw_term` dedupe，最多 `periods` 筆。
 **永不 raise**（單月失敗只 warn）；總結為空時上層 `download()` 才拋 `RuntimeError`。
+
+### 2.6 `src.scraper.lotto649_downloader.download(periods, output) -> int`
+
+**Append-only 合併**。流程：
+1. `fetch(periods)` 取得最新 N 期（API shape）
+2. `load_existing(output)` 讀既有 CSV（key=`draw_term`，**從不 canonicalize 既有列**）
+3. 對既有列構 set of `_canon_date(draw_date)`
+4. 對 fetched 每一列：若 canonical date 已在 existing set 中 → 跳過；否則加入 merged dict
+5. `save_csv(merged.values(), output)` 寫回（sort by `draw_term` desc）
+
+**設計取捨**：
+- 為何 dedup by canonical date：官方 API 改用新期別編碼 `115000053`（舊 `2447`），純 term-keyed dedup 會把同一期當兩列
+- 為何不重寫既有 date 格式：原 CSV 部分 `draw_date` 欄位本身錯亂（夾帶 synthetic），統一 canonicalize 反而幹掉合法資料
 
 ---
 

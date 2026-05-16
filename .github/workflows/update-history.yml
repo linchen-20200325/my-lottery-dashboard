@@ -52,27 +52,45 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          set -e
+          set -x
           BRANCH="auto/data-update-$(date -u +'%Y%m%d-%H%M%S')"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -b "$BRANCH"
+          git checkout -b "$BRANCH" || { echo "::error::checkout -b failed"; exit 1; }
           git add data/lotto649.csv
-          git commit -m "data: 自動更新樂透歷史 ($(date -u +'%Y-%m-%d %H:%M UTC'))"
-          git push origin "$BRANCH"
-          PR_URL=$(gh pr create \
-            --base main \
-            --head "$BRANCH" \
-            --title "data: 自動更新樂透歷史 $(date -u +'%Y-%m-%d')" \
-            --body "由 \`update-history\` workflow 自動產生 (cron 週二/五 22:00 GMT+8 或手動觸發)。
+          git commit -m "data: 自動更新樂透歷史 ($(date -u +'%Y-%m-%d %H:%M UTC'))" || { echo "::error::commit failed"; exit 1; }
+          git push origin "$BRANCH" || { echo "::error::push failed"; exit 1; }
+
+          # PR body via heredoc to avoid YAML/bash escaping pitfalls
+          BODY_FILE=$(mktemp)
+          cat > "$BODY_FILE" <<EOF
+          由 update-history workflow 自動產生 (cron 週二/五 22:00 GMT+8 或手動觸發)。
 
           Run: $RUN_URL
 
-          CSV 變動由 scraper v3.1 直打官方 API 抓取；走 PR 流程繞過 main branch protection。")
-          echo "Created PR: $PR_URL"
-          gh pr merge "$PR_URL" --squash --auto --delete-branch 2>/dev/null || \
-          gh pr merge "$PR_URL" --squash --delete-branch || \
-          echo "::warning::Auto-merge failed; PR open for manual review: $PR_URL"
+          CSV 變動由 scraper v3.3 (date-dedupe) 直打官方 API 抓取；走 PR 流程繞過 main branch protection。
+          EOF
+
+          PR_CREATE_LOG=$(mktemp)
+          if PR_URL=$(gh pr create --base main --head "$BRANCH" \
+              --title "data: 自動更新樂透歷史 $(date -u +'%Y-%m-%d')" \
+              --body-file "$BODY_FILE" 2>"$PR_CREATE_LOG"); then
+            echo "Created PR: $PR_URL"
+          else
+            echo "::error::gh pr create failed:"
+            cat "$PR_CREATE_LOG"
+            echo "::error::Branch $BRANCH was pushed but PR not created. Create PR manually from GitHub UI."
+            exit 1
+          fi
+
+          # Best-effort merge: try auto-merge → direct merge → leave PR open. Step succeeds either way.
+          if gh pr merge "$PR_URL" --squash --auto --delete-branch 2>/dev/null; then
+            echo "Auto-merge scheduled."
+          elif gh pr merge "$PR_URL" --squash --delete-branch 2>/dev/null; then
+            echo "Merged immediately."
+          else
+            echo "::warning::Auto-merge failed; PR open for manual review: $PR_URL"
+          fi
 
       - name: Open issue on failure
         if: failure()

@@ -60,6 +60,27 @@ JSON_RETRY_ATTEMPTS = 3
 JSON_RETRY_BACKOFF = 2.0  # seconds, exponential
 
 
+def _canon_date(s: str) -> str:
+    """Normalize date strings to `YYYY/MM/DD` (zero-padded).
+
+    Accepts: '2026/5/12', '2026-05-15', '2026-05-15T00:00:00', etc.
+    Returns input unchanged if unparseable. Used as the dedupe key
+    because the official API changed `draw_term` schemes (e.g. old
+    `2446` vs new `115000053`) — date is the stable identifier.
+    """
+    if not s:
+        return ""
+    head = s[:10].replace("-", "/")
+    parts = head.split("/")
+    if len(parts) >= 3:
+        try:
+            y, m, d = int(parts[0]), int(parts[1]), int(parts[2])
+            return f"{y:04d}/{m:02d}/{d:02d}"
+        except ValueError:
+            return s
+    return s
+
+
 @dataclass(frozen=True)
 class Draw:
     draw_term: str
@@ -151,7 +172,7 @@ def _parse_row(row: dict) -> Draw | None:
     try:
         return Draw(
             draw_term=str(row.get("期別") or row.get("period") or ""),
-            draw_date=str(row.get("開獎日期") or row.get("lotteryDate") or "")[:10],
+            draw_date=_canon_date(str(row.get("開獎日期") or row.get("lotteryDate") or "")),
             n1=int(nums[0]), n2=int(nums[1]), n3=int(nums[2]),
             n4=int(nums[3]), n5=int(nums[4]), n6=int(nums[5]),
             special=int(special or 0),
@@ -188,6 +209,7 @@ def fetch(periods: int = 500, session: requests.Session | None = None) -> list[D
 
 
 def load_existing(path: Path) -> dict[str, Draw]:
+    """Load existing CSV keyed by `draw_term` (preserves history as-is)."""
     if not path.exists():
         return {}
     with path.open("r", encoding="utf-8", newline="") as fp:
@@ -209,6 +231,7 @@ def load_existing(path: Path) -> dict[str, Draw]:
 
 
 def save_csv(draws: Iterable[Draw], path: Path) -> int:
+    """Append-safe CSV writer; sorts by `draw_term` desc (existing convention)."""
     path.parent.mkdir(parents=True, exist_ok=True)
     rows = sorted(draws, key=lambda d: d.draw_term, reverse=True)
     with path.open("w", encoding="utf-8", newline="") as fp:
@@ -220,15 +243,33 @@ def save_csv(draws: Iterable[Draw], path: Path) -> int:
 
 
 def download(periods: int = 500, output: Path = DEFAULT_OUTPUT) -> int:
+    """Append-only merge: skip API rows whose canonical date matches any existing row.
+
+    Why date-based skip (not term-based merge): official API switched draw_term scheme
+    from traditional 4-digit (e.g. '2446') to internal long form (e.g. '115000052').
+    Pure term-keyed dedup would treat these as different draws and bloat the CSV.
+    Date is the stable identity. Existing rows are NEVER overwritten — even if their
+    `draw_date` field is malformed, they stay untouched.
+    """
     fetched = fetch(periods)
     if not fetched:
         raise RuntimeError(
             "Fetch returned no data. Network blocked? Use UI manual upload."
         )
     existing = load_existing(output)
-    merged = {**existing}
+    existing_dates = {_canon_date(d.draw_date) for d in existing.values() if d.draw_date}
+    merged: dict[str, Draw] = dict(existing)
+    added = 0
     for d in fetched:
+        canon = _canon_date(d.draw_date)
+        if canon and canon in existing_dates:
+            continue  # same date already in CSV — skip regardless of term scheme
+        if d.draw_term in merged:
+            continue  # extra safety against term-level collision
         merged[d.draw_term] = d
+        existing_dates.add(canon)
+        added += 1
+    LOGGER.info("Added %d new draw(s) (existing kept: %d)", added, len(existing))
     return save_csv(merged.values(), output)
 
 
