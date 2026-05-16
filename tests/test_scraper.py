@@ -222,6 +222,50 @@ class TestDownloadDedupByDate(unittest.TestCase):
             self.assertIn("9999,not-a-date", content)
 
 
+class TestSaveCsvSort(unittest.TestCase):
+    """save_csv must put newest real draw first regardless of term scheme.
+
+    Old 4-digit terms (e.g. '2446') and new long-form (e.g. '115000053') coexist;
+    string-sort reverse would push long-form to the bottom. Scheme-aware key
+    keeps long-form on top.
+    """
+
+    def test_long_form_term_sorts_above_short(self):
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "out.csv"
+            draws = [
+                scraper.Draw("2445", "2026/5/8", 10, 18, 25, 28, 39, 43, 48),
+                scraper.Draw("115000053", "2026/05/15", 16, 29, 30, 35, 42, 43, 1),
+                scraper.Draw("2446", "2026/5/12", 6, 12, 18, 19, 32, 36, 34),
+                scraper.Draw("1929", "2026/1/4", 3, 4, 7, 19, 22, 43, 36),
+            ]
+            scraper.save_csv(draws, p)
+            lines = p.read_text(encoding="utf-8").splitlines()
+            # header + 4 rows, newest first
+            self.assertEqual(lines[1].split(",")[0], "115000053")
+            self.assertEqual(lines[2].split(",")[0], "2446")
+            self.assertEqual(lines[3].split(",")[0], "2445")
+            self.assertEqual(lines[4].split(",")[0], "1929")
+
+    def test_garbage_term_drops_to_bottom(self):
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "out.csv"
+            draws = [
+                scraper.Draw("not-a-term", "2026/5/8", 1, 2, 3, 4, 5, 6, 7),
+                scraper.Draw("2446", "2026/5/12", 6, 12, 18, 19, 32, 36, 34),
+            ]
+            scraper.save_csv(draws, p)
+            lines = p.read_text(encoding="utf-8").splitlines()
+            self.assertEqual(lines[1].split(",")[0], "2446")
+            self.assertEqual(lines[2].split(",")[0], "not-a-term")
+
+
 class TestSessionBuilder(unittest.TestCase):
     def test_has_ua_and_referer(self):
         sess = scraper._build_session()

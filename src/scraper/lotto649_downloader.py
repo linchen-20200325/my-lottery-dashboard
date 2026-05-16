@@ -230,10 +230,34 @@ def load_existing(path: Path) -> dict[str, Draw]:
     return merged
 
 
+def _term_sort_key(term: str) -> tuple[int, int]:
+    """Scheme-aware sort key for `draw_term`.
+
+    Official API switched mid-history from 4-digit (e.g. `'2446'`) to long-form
+    (e.g. `'115000053'`). String-sort reverse puts long-form AFTER 4-digit
+    (`'1' < '2'`), so the newest real draw ends up at the bottom. The historical
+    CSV also has unreliable `draw_date` years (some rows hardcode '2026' across
+    multi-year synthetic data), so we can't sort by date either.
+
+    Rule: long-form scheme (len >= 8) sits in bucket 2 — always newer than any
+    4-digit term (bucket 1). Within each bucket, sort by integer term value.
+    Unparseable terms drop to bucket 0 (file tail).
+    """
+    if len(term) >= 8:
+        try:
+            return (2, int(term))
+        except ValueError:
+            return (0, 0)
+    try:
+        return (1, int(term))
+    except ValueError:
+        return (0, 0)
+
+
 def save_csv(draws: Iterable[Draw], path: Path) -> int:
-    """Append-safe CSV writer; sorts by `draw_term` desc (existing convention)."""
+    """Append-safe CSV writer; sorts newest-first via `_term_sort_key`."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    rows = sorted(draws, key=lambda d: d.draw_term, reverse=True)
+    rows = sorted(draws, key=lambda d: _term_sort_key(d.draw_term), reverse=True)
     with path.open("w", encoding="utf-8", newline="") as fp:
         writer = csv.DictWriter(fp, fieldnames=CSV_FIELDS)
         writer.writeheader()
