@@ -186,7 +186,7 @@ def pick_tickets(
 | 為何繞 PR | main 受 branch protection 保護，禁直推；走 PR 由 GITHUB_TOKEN 合併（branch protection 須允許 `github-actions[bot]` 或不要求 review） |
 | 失敗通知 | `gh issue create`（`if: failure()`）含 run URL + 排查清單（區分 scraper 失敗 vs PR 失敗） |
 | 並發 | `concurrency: update-history` 群組互斥 |
-| 權限 | `contents:write` + `issues:write` + `pull-requests:write` |
+| 權限 | YAML：`contents:write` + `issues:write` + `pull-requests:write`；**Repo Settings**：Actions → General → Workflow permissions → "Allow GitHub Actions to create and approve pull requests" 必須勾（預設 OFF、YAML 無法覆蓋） |
 
 ---
 
