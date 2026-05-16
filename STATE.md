@@ -65,8 +65,9 @@ my-lottery-2026/
     1. **Scraper dedup bug** — 官方 API 改用新期別編碼 (e.g. `115000053` 取代 `2447`)，舊 dedup key 用 `draw_term` → 同一期出兩列。**修復**：`download()` 改用 canonical `draw_date` 比對新 fetched 與既有 CSV，已存在日期跳過；既有 CSV 列**永不覆蓋**（保留歷史 as-is）
     2. **Workflow `set -e` brittleness** — `PR_URL=$(gh pr create ...)` 失敗時 set -e 直接 kill，連 fallback 也吃不到。**修復**：每個關鍵命令獨立錯誤 trap，PR 建立失敗會把 stderr 印到 log；merge fallback 改 if/elif 鏈確保 step 一定綠燈
   - **第四層 (v3.3 → 完成)**：v3.3 scraper + workflow 邏輯全綠，但 `gh pr create` 仍紅 — 根因**不在 YAML**，而是 **Repo Settings → Actions → General → Workflow permissions → "Allow GitHub Actions to create and approve pull requests"** 預設 OFF（獨立於 YAML `permissions:` 區塊的 repo 級開關，YAML 改不掉）。**修復**：手動勾選該開關 + Save。驗證：MCP token 帶 `pull-requests: write` 可建 PR (#17) 並 squash 進 main，證明 scraper/workflow 邏輯本身已就緒；toggle 翻完後下個 cron (週二 22:00) 即可自動運作
+  - **第五層 (sort fix PR #19)**：5/15 那期合進 CSV 後，UI 預覽前 5 列依然顯示 2446 在頂 — `save_csv` 用 `sorted(reverse=True, key=draw_term)` 做**字串**排序，新長式 `'115000053'` < `'2446'`（`'1' < '2'`）被推到底部。改用 scheme-aware 整數 key `_term_sort_key`：長式 (`len>=8`) → bucket 2 + int(term)、4 位 → bucket 1 + int(term)、garbage → bucket 0。CSV 重排 519 期內容不變、5/15 上頂
   - 防呆：existing 列即便 date 欄錯亂也保留；`if not fetched` raise；`git diff --quiet` 跳過無變動
-  - 測試：87 個 unit tests 全綠（含新增 `test_no_duplicate_when_terms_differ_but_date_matches` 與 `test_existing_rows_unchanged_even_if_malformed`）
+  - 測試：89 個 unit tests 全綠（含 dedup-by-date + scheme-aware sort 新測試）
 
 ## 常用指令
 ```bash
