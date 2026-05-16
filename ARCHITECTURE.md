@@ -42,12 +42,13 @@
 
 (離線輔助，與 live app 解耦)
 ┌──────────────────────────────────┐
-│  src.scraper.lotto649_downloader │   抓檔層
-│  (taiwanlottery 套件 + 增量合併)   │   (本機 / GitHub Actions)
+│  src.scraper.lotto649_downloader │   抓檔層 v3.1
+│  (直打官方 API + UA + retry +     │   (本機 / GitHub Actions)
+│   增量合併)                        │
 └──────────────────────────────────┘
 ```
 
-**核心依賴限制（協定 §6）**：`src.generator.*` 只准用 `random` + `itertools` + `collections` + `statistics`。禁止 `pandas` / `numpy`。Streamlit、`math.comb`、`taiwanlottery` 為周邊例外。
+**核心依賴限制（協定 §6）**：`src.generator.*` 只准用 `random` + `itertools` + `collections` + `statistics`。禁止 `pandas` / `numpy`。Streamlit、`math.comb`、`requests`（scraper 限定）為周邊例外。
 
 ---
 
@@ -121,7 +122,8 @@ GitHub Actions cron '0 14 * * 2,5'  (週二/週五 22:00 GMT+8, 開獎當晚)
                   │
                   ▼
       python -m src.scraper.lotto649_downloader --periods 50
-       (失敗 → RuntimeError → CSV 不變、step exit 1)
+       (v3.1: 直打 api.taiwanlottery.com + UA + Retry(429/5xx) + JSON-decode 外層 retry 3 次)
+       (失敗 → RuntimeError + 診斷 log → CSV 不變、step exit 1)
                   │
                   ▼
       git diff --quiet data/lotto649.csv?

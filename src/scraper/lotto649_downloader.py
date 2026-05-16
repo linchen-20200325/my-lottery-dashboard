@@ -1,12 +1,23 @@
-"""Taiwan Lotto 6/49 historical fetcher (v3.0).
+"""Taiwan Lotto 6/49 historical fetcher (v3.1 — direct API).
 
-Thin wrapper over the `taiwanlottery` PyPI package
-(https://pypi.org/project/taiwanlottery/). Iterates months backwards from
-today and accumulates draws until `periods` records are collected.
+Direct call to the official Taiwan Lottery API
+(`https://api.taiwanlottery.com/TLCAPIWeB/Lottery/Lotto649Result`),
+bypassing the fragile `taiwanlottery` PyPI wrapper. Iterates months
+backwards from today and accumulates draws until `periods` records
+are collected.
+
+Why direct: the upstream wrapper calls `response.json()` with no
+User-Agent / retry / timeout / diagnostic logging — when the API
+returns HTML or empty body (cloud-IP block, rate limit, transient
+outage), it dies with a cryptic `JSONDecodeError` and the workflow
+opens an issue with zero context. This rewrite adds: browser UA,
+status/body preview on parse failure, retry adapter (4xx/5xx),
+and an outer retry loop for transient JSON-decode errors.
 
 This module is offline tooling: run it locally / in CI to refresh
-`data/lotto649.csv`, then commit the CSV. Streamlit Cloud reads the CSV
-checked into the repo (or accepts a manual upload via the UI).
+`data/lotto649.csv`, then commit the CSV. Streamlit Cloud reads the
+CSV checked into the repo (or accepts a manual upload via the UI);
+the live app never makes outbound API calls (CLAUDE.md §3).
 
 CLI:
     python -m src.scraper.lotto649_downloader --periods 500
@@ -18,16 +29,35 @@ import argparse
 import csv
 import logging
 import sys
+import time
 from dataclasses import asdict, dataclass
 from datetime import date
 from pathlib import Path
 from typing import Iterable
+
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 LOGGER = logging.getLogger("lotto649")
 DEFAULT_OUTPUT = Path("data/lotto649.csv")
 CSV_FIELDS = [
     "draw_term", "draw_date", "n1", "n2", "n3", "n4", "n5", "n6", "special",
 ]
+
+API_BASE = "https://api.taiwanlottery.com/TLCAPIWeB/Lottery"
+DEFAULT_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "zh-TW,zh;q=0.9,en;q=0.8",
+    "Referer": "https://www.taiwanlottery.com/",
+}
+REQUEST_TIMEOUT = 15  # seconds
+JSON_RETRY_ATTEMPTS = 3
+JSON_RETRY_BACKOFF = 2.0  # seconds, exponential
 
 
 @dataclass(frozen=True)
@@ -56,9 +86,67 @@ def _months_back(n_months: int) -> list[tuple[str, str]]:
     return out
 
 
+def _build_session() -> requests.Session:
+    """Session with browser UA + retry adapter (429/5xx)."""
+    sess = requests.Session()
+    sess.headers.update(DEFAULT_HEADERS)
+    retry = Retry(
+        total=3,
+        backoff_factor=2.0,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["GET"],
+        raise_on_status=False,
+    )
+    sess.mount("https://", HTTPAdapter(max_retries=retry))
+    return sess
+
+
+def _fetch_month_raw(sess: requests.Session, year: str, month: str) -> list[dict]:
+    """Call API for one month; returns raw row list. Retries on JSON decode failures."""
+    url = f"{API_BASE}/Lotto649Result?period&month={year}-{month}&pageSize=31"
+    last_err: Exception | None = None
+    for attempt in range(JSON_RETRY_ATTEMPTS):
+        resp = sess.get(url, timeout=REQUEST_TIMEOUT)
+        if resp.status_code != 200:
+            LOGGER.warning(
+                "API %s-%s HTTP %s (attempt %d/%d): %r",
+                year, month, resp.status_code, attempt + 1, JSON_RETRY_ATTEMPTS,
+                resp.content[:200],
+            )
+            last_err = RuntimeError(f"HTTP {resp.status_code}")
+        else:
+            try:
+                payload = resp.json()
+            except ValueError as exc:
+                LOGGER.warning(
+                    "API %s-%s JSON parse failed (attempt %d/%d). "
+                    "Content-Type=%s. Body preview: %r",
+                    year, month, attempt + 1, JSON_RETRY_ATTEMPTS,
+                    resp.headers.get("content-type", "?"),
+                    resp.content[:200],
+                )
+                last_err = exc
+            else:
+                content = payload.get("content") if isinstance(payload, dict) else None
+                rows = (content or {}).get("lotto649Res") or []
+                return list(rows)
+        if attempt < JSON_RETRY_ATTEMPTS - 1:
+            time.sleep(JSON_RETRY_BACKOFF * (2 ** attempt))
+    raise RuntimeError(f"All {JSON_RETRY_ATTEMPTS} attempts failed: {last_err}")
+
+
 def _parse_row(row: dict) -> Draw | None:
-    nums = row.get("獎號") or row.get("drawNumber") or []
-    if len(nums) < 6:
+    """Parse one API row (or legacy taiwanlottery shape) into a Draw."""
+    # Direct API shape: drawNumberSize is a list of 7 ints (6 main + 1 special).
+    # Legacy taiwanlottery shape: 獎號 (list[6]) + 特別號 (int).
+    nums = row.get("獎號")
+    special = row.get("特別號")
+    if nums is None:
+        dn = row.get("drawNumberSize") or []
+        if len(dn) >= 7:
+            nums = dn[:6]
+            special = dn[6]
+    if not nums or len(nums) < 6:
         return None
     try:
         return Draw(
@@ -66,28 +154,29 @@ def _parse_row(row: dict) -> Draw | None:
             draw_date=str(row.get("開獎日期") or row.get("lotteryDate") or "")[:10],
             n1=int(nums[0]), n2=int(nums[1]), n3=int(nums[2]),
             n4=int(nums[3]), n5=int(nums[4]), n6=int(nums[5]),
-            special=int(row.get("特別號") or row.get("specialNumber") or 0),
+            special=int(special or 0),
         )
     except (TypeError, ValueError):
         return None
 
 
-def fetch(periods: int = 500) -> list[Draw]:
-    """Fetch up to `periods` recent draws (newest first)."""
-    from TaiwanLottery import TaiwanLotteryCrawler  # lazy import for offline ok
+def fetch(periods: int = 500, session: requests.Session | None = None) -> list[Draw]:
+    """Fetch up to `periods` recent draws (newest first).
 
-    crawler = TaiwanLotteryCrawler()
+    `session` is injectable for tests; defaults to a fresh hardened session.
+    """
+    sess = session or _build_session()
     seen: set[str] = set()
     out: list[Draw] = []
     months = (periods + 7) // 8 + 2  # ~8 draws/month max; pad
 
     for year, month in _months_back(months):
         try:
-            rows = crawler.lotto649(back_time=[year, month])
+            rows = _fetch_month_raw(sess, year, month)
         except Exception as exc:  # noqa: BLE001
             LOGGER.warning("Fetch %s-%s failed: %s", year, month, exc)
             continue
-        for row in rows or []:
+        for row in rows:
             draw = _parse_row(row)
             if draw is None or draw.draw_term in seen:
                 continue

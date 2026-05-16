@@ -28,9 +28,9 @@ my-lottery-2026/
 │   │   ├── cost_calc.py                   # 包牌成本（live app 可用）
 │   │   ├── backtest.py                    # 離線命中率回測 CLI
 │   │   └── metrics.py                     # compression_rate + survival_rate (§3)
-│   └── scraper/lotto649_downloader.py     # 離線抓檔（用 taiwanlottery 套件）
+│   └── scraper/lotto649_downloader.py     # 離線抓檔 v3.1（直打官方 API + UA + retry）
 ├── data/lotto649.csv                      # 倉庫內附歷史資料（真實 518 期 / 2026-05-12 截止）
-├── tests/                                 # 68 個單元測試
+├── tests/                                 # 80 個單元測試
 ├── .github/workflows/update-history.yml   # CI 自動抓檔 (Phase 6, 週二/五 22:00)
 ├── requirements.txt
 ├── CLAUDE.md
@@ -56,12 +56,14 @@ my-lottery-2026/
 - [x] v6 auto-key silent drop + Phase 4 Round 2 disjoint fallback  ✅ 2026-05-14
 
 ## 後續規劃 (Phase 6 — Future Work)
-- [~] **爬蟲自動更新歷史資料** — YAML 就位，等 merge 至 `main` + 首次 dry run 驗證
+- [~] **爬蟲自動更新歷史資料** — workflow 已上 main，2026-05-15 首跑失敗 (issue #8)；scraper v3.1 直打 API + UA + retry 修復，待 workflow_dispatch 驗證
   - 開獎時程：**每週二、週五**；抓檔時間 **22:00 (GMT+8)** → cron `0 14 * * 2,5`
   - 實作：`.github/workflows/update-history.yml`（checkout → setup-python 3.11 → pip install → scraper `--periods 50` → diff → 直推 main → 失敗開 issue）
+  - **2026-05-15 失敗根因**：`taiwanlottery` PyPI wrapper 無 UA / retry / 診斷 log，官方 API 回非 JSON 時直接炸 `JSONDecodeError`
+  - **v3.1 修復**：scraper 改直打 `api.taiwanlottery.com`，加 Mozilla UA + Referer + `urllib3.Retry`（429/5xx）+ JSON-decode 外層 retry（3 次指數 backoff）+ 失敗時記錄 status / content-type / body preview
   - 防呆：scraper 抓不到拋 RuntimeError、CSV 不覆蓋；`git diff --quiet` 偵測無變動則跳過 commit
   - 失敗通知：`if: failure()` step 用 `gh issue create` 開 issue（含 run URL）
-  - 待驗證：merge 至 `main` 後，手動觸發 `workflow_dispatch` 跑 dry run，確認 `taiwanlottery` 不被 Actions runner 擋；無誤後此項打 `[x]`
+  - 待驗證：v3.1 推上 main 後，手動觸發 `workflow_dispatch` 跑 dry run；若仍失敗則檢查 issue body 的 diagnostic log 看 Actions runner IP 是否被擋；無誤後此項打 `[x]`
 
 ## 常用指令
 ```bash
