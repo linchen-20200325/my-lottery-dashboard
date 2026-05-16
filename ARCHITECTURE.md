@@ -127,19 +127,24 @@ GitHub Actions cron '0 14 * * 2,5'  (週二/週五 22:00 GMT+8, 開獎當晚)
                   │
                   ▼
       git diff --quiet data/lotto649.csv?
-       │ 無變動：跳過 commit
-       │ 有變動：commit + push origin main → Streamlit Cloud 自動 redeploy
+       │ 無變動：跳過 PR
+       │ 有變動：建分支 auto/data-update-{ts} → push → gh pr create
+                              │
+                              ▼
+       gh pr merge --squash --auto --delete-branch  (v3.2)
+        │ 成功：squash 進 main → Streamlit Cloud 自動 redeploy
+        │ 失敗：fallback 為直接 merge；再失敗則留 PR 待手動 review
                   │
                   ▼ (任一 step 失敗)
-      gh issue create --title "[auto-update] 樂透歷史抓檔失敗 YYYY-MM-DD"
-       (含 run URL，方便排查)
+      gh issue create --title "[auto-update] 樂透歷史更新失敗 YYYY-MM-DD"
+       (含 run URL + scraper vs PR 兩階段排查清單)
 ```
 
 **設計取捨**：
-- **直推 main**：scraper 已內建增量合併與失敗保留 last-good，無需 PR review 把關。
+- **PR 流程 (v3.2)**：main 受 branch protection 保護禁直推；改建短命分支 + auto-merge 繞過。失敗時保留 PR 提供 audit trail。
 - **`workflow_dispatch`**：保留手動觸發以支援 dry run 與緊急補檔。
 - **`concurrency: update-history`**：cron + manual 重疊時不 race。
-- **權限最小化**：`contents:write + issues:write`，不開 admin。
+- **權限**：`contents:write + issues:write + pull-requests:write`（PR 流程需要）。
 
 ---
 
