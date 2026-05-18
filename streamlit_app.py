@@ -135,7 +135,7 @@ with st.sidebar:
     st.markdown("**🤖 自動更新歷史資料**")
     st.link_button(
         "🚀 觸發 GitHub Actions 抓檔",
-        url="https://github.com/CornCorn-2015/my-lottery-2026/actions/workflows/update-history.yml",
+        url="https://github.com/LinChen-20200325/my-lottery-dashboard/actions/workflows/update-history.yml",
         use_container_width=True,
     )
     st.caption(
