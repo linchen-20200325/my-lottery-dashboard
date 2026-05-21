@@ -149,6 +149,70 @@ class TestFetch(unittest.TestCase):
         self.assertEqual(len(out), 3)
 
 
+class TestFetchCurrentMonthFatal(unittest.TestCase):
+    """If the current month's API call fails after retries, fetch() must raise
+    instead of silently returning only stale older-month draws — otherwise the
+    workflow reports 'No new draws' green-ly and ships stale data forever.
+    """
+
+    def test_current_month_failure_raises(self):
+        with patch.object(scraper, "_fetch_month_raw") as mock_raw:
+            mock_raw.side_effect = RuntimeError("HTTP 403 Host not in allowlist")
+            with self.assertRaises(RuntimeError) as cm:
+                scraper.fetch(periods=10, session=MagicMock())
+        self.assertIn("Current month", str(cm.exception))
+        self.assertIn("Cloudflare", str(cm.exception))
+
+    def test_older_month_failure_does_not_raise(self):
+        """idx > 0 failures still warn-and-continue — older months can be
+        rate-limited or missing without invalidating the current-month signal.
+        """
+        sample_rows = SAMPLE_PAYLOAD["content"]["lotto649Res"]
+        calls = {"n": 0}
+
+        def side_effect(_sess, _year, _month):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return sample_rows  # current month OK
+            raise RuntimeError("HTTP 500")  # older months fail
+
+        with patch.object(scraper, "_fetch_month_raw", side_effect=side_effect):
+            out = scraper.fetch(periods=10, session=MagicMock())
+        # Current-month rows still returned; older failures swallowed.
+        self.assertEqual(len(out), 2)
+        self.assertGreater(calls["n"], 1)  # iteration continued past idx=0
+
+
+class TestDownloadDiagnosticLog(unittest.TestCase):
+    """download() must emit fetched_max / existing_max / added so a stale-data
+    workflow can be diagnosed from the Actions log without re-running locally.
+    """
+
+    def test_diagnostic_log_present(self):
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            csv_path = Path(tmp) / "lotto.csv"
+            csv_path.write_text(
+                "draw_term,draw_date,n1,n2,n3,n4,n5,n6,special\n"
+                "2446,2026/5/12,6,12,18,19,32,36,34\n",
+                encoding="utf-8",
+            )
+            # API returns same draw — added should be 0
+            api_draws = [
+                scraper.Draw("115000052", "2026/05/12", 6, 12, 18, 19, 32, 36, 34),
+            ]
+            with patch.object(scraper, "fetch", return_value=api_draws):
+                with self.assertLogs("lotto649", level="INFO") as cm:
+                    scraper.download(periods=10, output=csv_path)
+        log_text = "\n".join(cm.output)
+        self.assertIn("fetched=1", log_text)
+        self.assertIn("existing=1", log_text)
+        self.assertIn("max_date=2026/05/12", log_text)
+        self.assertIn("Added 0", log_text)
+
+
 class TestCanonDate(unittest.TestCase):
     def test_slash_no_zero_pad(self):
         self.assertEqual(scraper._canon_date("2026/5/12"), "2026/05/12")

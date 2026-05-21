@@ -66,8 +66,14 @@ my-lottery-2026/
     1. **Scraper dedup bug** — 官方 API 改用新期別編碼 (e.g. `115000053` 取代 `2447`)，舊 dedup key 用 `draw_term` → 同一期出兩列。**修復**：`download()` 改用 canonical `draw_date` 比對新 fetched 與既有 CSV，已存在日期跳過；既有 CSV 列**永不覆蓋**（保留歷史 as-is）
     2. **Workflow `set -e` brittleness** — `PR_URL=$(gh pr create ...)` 失敗時 set -e 直接 kill，連 fallback 也吃不到。**修復**：每個關鍵命令獨立錯誤 trap，PR 建立失敗會把 stderr 印到 log；merge fallback 改 if/elif 鏈確保 step 一定綠燈
   - **第四層 (v3.3 → 完成)**：v3.3 scraper + workflow 邏輯全綠，但 `gh pr create` 仍紅 — 根因**不在 YAML**，而是 **Repo Settings → Actions → General → Workflow permissions → "Allow GitHub Actions to create and approve pull requests"** 預設 OFF（獨立於 YAML `permissions:` 區塊的 repo 級開關，YAML 改不掉）。**修復**：手動勾選該開關 + Save。驗證：MCP token 帶 `pull-requests: write` 可建 PR (#17) 並 squash 進 main，證明 scraper/workflow 邏輯本身已就緒；toggle 翻完後下個 cron (週二 22:00) 即可自動運作
+  - **第五層 (v3.4 — 偽綠燈)**：2026-05-21 手動觸發 run #3 顯示 Success 39s 但無 PR、CSV 仍停在 5/15。根因：`fetch()` 對單月 API 失敗只 `LOGGER.warning + continue`；當月 (idx=0) fetch 被 Cloudflare 擋掉時，舊月仍能跑出已知舊資料 → `download()` 看到 `added=0` → `git diff --quiet` 真的沒變 → workflow 偽綠燈，stale CSV 永遠不更新。**修復**：
+    1. `fetch()` 當月 (idx=0) 失敗改 `raise RuntimeError`，迫使 workflow 紅燈 + 觸發 issue
+    2. `fetch()` 加 per-month INFO log（API returned N row(s)）
+    3. `download()` 加診斷 log（`fetched_max / existing_max / added`）便於 Actions log 直接定位
+    4. workflow `Run scraper` step 用 `tee /tmp/scraper.log` + `set -o pipefail` 留存輸出
+    5. `Open issue on failure` step 把 scraper log tail 50 行包進 issue body（含 HTTP status / body preview / per-month count）
   - 防呆：existing 列即便 date 欄錯亂也保留；`if not fetched` raise；`git diff --quiet` 跳過無變動
-  - 測試：87 個 unit tests 全綠（含新增 `test_no_duplicate_when_terms_differ_but_date_matches` 與 `test_existing_rows_unchanged_even_if_malformed`）
+  - 測試：92 個 unit tests 全綠（新增 `test_current_month_failure_raises` / `test_older_month_failure_does_not_raise` / `test_diagnostic_log_present`）
 
 ## 常用指令
 ```bash

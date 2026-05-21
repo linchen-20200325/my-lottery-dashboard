@@ -185,18 +185,32 @@ def fetch(periods: int = 500, session: requests.Session | None = None) -> list[D
     """Fetch up to `periods` recent draws (newest first).
 
     `session` is injectable for tests; defaults to a fresh hardened session.
+
+    Current-month (idx=0) failure is fatal — that's how stale data slips through
+    cron silently: if Cloudflare blocks the runner IP on May fetch but April
+    still works, `fetched` ends up full of already-known draws, `download()`
+    reports "added=0", and the workflow goes green with no new lottery data.
+    Raise on idx=0 so the workflow turns red and opens an issue with diagnostics.
     """
     sess = session or _build_session()
     seen: set[str] = set()
     out: list[Draw] = []
     months = (periods + 7) // 8 + 2  # ~8 draws/month max; pad
 
-    for year, month in _months_back(months):
+    for idx, (year, month) in enumerate(_months_back(months)):
         try:
             rows = _fetch_month_raw(sess, year, month)
         except Exception as exc:  # noqa: BLE001
             LOGGER.warning("Fetch %s-%s failed: %s", year, month, exc)
+            if idx == 0:
+                raise RuntimeError(
+                    f"Current month {year}-{month} fetch failed after retries: {exc}. "
+                    "Likely Cloudflare / IP block on the Actions runner — see the "
+                    "scraper log tail in the auto-opened issue body for HTTP status "
+                    "and body preview."
+                ) from exc
             continue
+        LOGGER.info("Month %s-%s: API returned %d row(s)", year, month, len(rows))
         for row in rows:
             draw = _parse_row(row)
             if draw is None or draw.draw_term in seen:
@@ -282,6 +296,17 @@ def download(periods: int = 500, output: Path = DEFAULT_OUTPUT) -> int:
         )
     existing = load_existing(output)
     existing_dates = {_canon_date(d.draw_date) for d in existing.values() if d.draw_date}
+
+    fetched_max = max(
+        (_canon_date(d.draw_date) for d in fetched if d.draw_date),
+        default="",
+    )
+    existing_max = max(existing_dates, default="")
+    LOGGER.info(
+        "Diagnostic: fetched=%d (max_date=%s) | existing=%d (max_date=%s)",
+        len(fetched), fetched_max or "?", len(existing), existing_max or "?",
+    )
+
     merged: dict[str, Draw] = dict(existing)
     added = 0
     for d in fetched:

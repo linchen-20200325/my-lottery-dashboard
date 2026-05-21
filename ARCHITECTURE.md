@@ -121,9 +121,11 @@ GitHub Actions cron '0 14 * * 2,5'  (週二/週五 22:00 GMT+8, 開獎當晚)
       checkout → setup-python 3.11 → pip install requirements.txt
                   │
                   ▼
-      python -m src.scraper.lotto649_downloader --periods 50
+      python -m src.scraper.lotto649_downloader --periods 50 --verbose 2>&1 | tee /tmp/scraper.log
        (v3.1: 直打 api.taiwanlottery.com + UA + Retry(429/5xx) + JSON-decode 外層 retry 3 次)
-       (失敗 → RuntimeError + 診斷 log → CSV 不變、step exit 1)
+       (v3.4: 當月 fetch 失敗 raise → 杜絕「Cloudflare 擋當月、舊月 OK」偽綠燈)
+       (v3.4: per-month INFO log + download() 印 fetched_max/existing_max/added 診斷)
+       (失敗 → RuntimeError + 診斷 log → CSV 不變、step exit 1、tee 的 log 進 issue body)
                   │
                   ▼
       git diff --quiet data/lotto649.csv?
@@ -137,7 +139,7 @@ GitHub Actions cron '0 14 * * 2,5'  (週二/週五 22:00 GMT+8, 開獎當晚)
                   │
                   ▼ (任一 step 失敗)
       gh issue create --title "[auto-update] 樂透歷史更新失敗 YYYY-MM-DD"
-       (含 run URL + scraper vs PR 兩階段排查清單)
+       (含 run URL + scraper vs PR 兩階段排查清單 + scraper log tail 50 行)
 ```
 
 **設計取捨**：

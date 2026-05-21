@@ -32,7 +32,11 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run scraper (incremental, 50 periods)
-        run: python -m src.scraper.lotto649_downloader --periods 50
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m src.scraper.lotto649_downloader --periods 50 --verbose 2>&1 \
+            | tee /tmp/scraper.log
 
       - name: Detect CSV changes
         id: diff
@@ -97,14 +101,29 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: bash
         run: |
+          BODY_FILE=$(mktemp)
+          {
+            echo "Workflow run: $RUN_URL"
+            echo ""
+            echo "排查清單："
+            echo "1. **Run scraper** 紅燈 → 官方 API 異常 / Cloudflare 擋 / 依賴問題"
+            echo "2. **Open auto-merge PR** 紅燈 → branch protection / token 權限 / PR 衝突"
+            echo "3. 看下方 scraper log tail（含 HTTP status / body preview / per-month row count）"
+            echo ""
+            echo "手動補救：本機 \`python -m src.scraper.lotto649_downloader --periods 50 --verbose\` 並透過 UI 上傳 CSV。"
+            echo ""
+            echo "## Scraper log (last 50 lines)"
+            echo ""
+            echo '```'
+            if [ -f /tmp/scraper.log ]; then
+              tail -50 /tmp/scraper.log
+            else
+              echo "(no scraper log captured — step failed before tee)"
+            fi
+            echo '```'
+          } > "$BODY_FILE"
           gh issue create \
             --title "[auto-update] 樂透歷史更新失敗 $(date -u +'%Y-%m-%d')" \
-            --body "Workflow run: $RUN_URL
-
-          排查清單：
-          1. **Run scraper** 紅燈 → 官方 API 異常 / Cloudflare 擋 / 依賴問題
-          2. **Open auto-merge PR** 紅燈 → branch protection / token 權限 / PR 衝突
-          3. 點 Run URL 進去看每一步的展開 log
-
-          手動補救：本機 \`python -m src.scraper.lotto649_downloader --periods 50\` 並透過 UI 上傳 CSV。"
+            --body-file "$BODY_FILE"
