@@ -128,8 +128,12 @@ def pick_tickets(
 - `urllib3.Retry` 自動重試 429/500/502/503/504（3 次、backoff 2.0）
 - JSON-decode 外層 retry：3 次（指數 backoff 2/4/8s）、失敗時 log `status / content-type / body preview`
 
-**回傳**：list of `Draw`（`draw_date` 已 canonicalize 至 `YYYY/MM/DD`），fetch 內部用 `draw_term` dedupe，最多 `periods` 筆。
-**永不 raise**（單月失敗只 warn）；總結為空時上層 `download()` 才拋 `RuntimeError`。
+**回傳**：list of `Draw`（`draw_date` 已 canonicalize 至 `YYYY/MM/DD`），fetch 內部用 `draw_term` dedupe，最多 `periods` 筆。每月 fetch 完印 `INFO Month YYYY-MM: API returned N row(s)`。
+
+**例外**：
+- **當月 (idx=0) 失敗 → `RuntimeError`**（v3.4 起；阻止「Cloudflare 擋當月、舊月 OK」造成的偽綠燈 stale CSV）
+- 舊月 (idx ≥ 1) 失敗只 `LOGGER.warning + continue`
+- 總結為空時上層 `download()` 才拋 `RuntimeError`
 
 ### 2.6 `src.scraper.lotto649_downloader.download(periods, output) -> int`
 
@@ -137,8 +141,9 @@ def pick_tickets(
 1. `fetch(periods)` 取得最新 N 期（API shape）
 2. `load_existing(output)` 讀既有 CSV（key=`draw_term`，**從不 canonicalize 既有列**）
 3. 對既有列構 set of `_canon_date(draw_date)`
-4. 對 fetched 每一列：若 canonical date 已在 existing set 中 → 跳過；否則加入 merged dict
-5. `save_csv(merged.values(), output)` 寫回（sort by `draw_term` desc）
+4. **印診斷 log**：`fetched=N (max_date=X) | existing=M (max_date=Y)` — 排查 stale-CSV 不再需要本機重跑
+5. 對 fetched 每一列：若 canonical date 已在 existing set 中 → 跳過；否則加入 merged dict
+6. `save_csv(merged.values(), output)` 寫回（sort by `draw_term` desc）
 
 **設計取捨**：
 - 為何 dedup by canonical date：官方 API 改用新期別編碼 `115000053`（舊 `2447`），純 term-keyed dedup 會把同一期當兩列
@@ -180,11 +185,11 @@ def pick_tickets(
 | 觸發 | cron `0 14 * * 2,5`（GMT+8 22:00 週二/五）+ `workflow_dispatch` |
 |---|---|
 | 環境 | ubuntu-latest, python 3.11, pip cache |
-| 抓檔 | `python -m src.scraper.lotto649_downloader --periods 50` |
+| 抓檔 | `python -m src.scraper.lotto649_downloader --periods 50 --verbose 2>&1 \| tee /tmp/scraper.log`（`set -o pipefail` 保留 exit code） |
 | Commit 條件 | `git diff --quiet data/lotto649.csv` 失敗（有變動） |
 | 推送策略 | **PR-based**：建分支 `auto/data-update-{YYYYMMDD-HHMMSS}` → push → `gh pr create` → `gh pr merge --squash --auto --delete-branch` |
 | 為何繞 PR | main 受 branch protection 保護，禁直推；走 PR 由 GITHUB_TOKEN 合併（branch protection 須允許 `github-actions[bot]` 或不要求 review） |
-| 失敗通知 | `gh issue create`（`if: failure()`）含 run URL + 排查清單（區分 scraper 失敗 vs PR 失敗） |
+| 失敗通知 | `gh issue create`（`if: failure()`）含 run URL + 排查清單 + **scraper log tail 50 行**（HTTP status / body preview / per-month row count，v3.4 起） |
 | 並發 | `concurrency: update-history` 群組互斥 |
 | 權限 | YAML：`contents:write` + `issues:write` + `pull-requests:write`；**Repo Settings**：Actions → General → Workflow permissions → "Allow GitHub Actions to create and approve pull requests" 必須勾（預設 OFF、YAML 無法覆蓋） |
 
