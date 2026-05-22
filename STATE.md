@@ -72,14 +72,19 @@ my-lottery-2026/
     3. `download()` 加診斷 log（`fetched_max / existing_max / added`）便於 Actions log 直接定位
     4. workflow `Run scraper` step 用 `tee /tmp/scraper.log` + `set -o pipefail` 留存輸出
     5. `Open issue on failure` step 把 scraper log tail 50 行包進 issue body（含 HTTP status / body preview / per-month count）
-  - **第六層 (v3.5 — 拿掉 PR 噪音)**：v3.2-3.4 走 PR 流程繞 main protection，每次 data 更新都產生 closed PR (週二/五兩枚)。改方案 A：bot 加進 main bypass list、scraper 改回直推 main。**改動**：
+  - **第六層 (v3.5 — 拿掉 PR 噪音)**：v3.2-3.4 走 PR 流程繞 main protection，每次 data 更新都產生 closed PR (週二/五兩枚)。改方案 A：bot 直推 main（後來發現 main 根本沒 classic branch protection，bypass list 不用動）。**改動**：
     1. workflow YAML 拿掉「建分支 → `gh pr create` → `gh pr merge`」三段，改 `git pull --rebase origin main && git push origin main`
     2. `actions/checkout@v4` 加 `ref: main`，確保從 feature branch 手動 dispatch 也是更新 main 的 CSV
     3. `permissions:` 拿掉 `pull-requests: write`（不再需要）
     4. failure issue body 排查清單更新（PR 失敗模式 → bypass list 漏勾 / rebase 衝突）
-    5. **Repo Settings 必動**：Settings → Branches → `main` → Edit protection rule → 勾「Allow specified actors to bypass required pull requests」→ 加 `github-actions[bot]`（YAML 無法覆蓋此 repo 級開關，類似 v3.3 的「Allow Actions to create PRs」toggle）
+  - **第七層 (v3.6 — 合成 date 污染清洗)**：2026-05-22 v3.5 merge 後 run #7 仍綠燈無 commit。v3.4 診斷 log 一翻兩瞪眼：`fetched max_date=2026/05/19` ✅（API 真有 5/19）但 `existing max_date=2026/12/31` ⚠️ — 既有 CSV 內 519 筆**全部年份都是 2026**（包括 5/19、12/31 等假 date），是當初「用真實 518 期覆蓋合成樣本」時 number 對了但 date 全用合成日期填充的遺留 bug。`期別 2094` 那筆假 date `2026/5/19` 把 API 真實 5/19 的 dedup key 佔走 → 真資料被誤殺。**修復**：
+    1. `scripts/sanitize_legacy_dates.py` one-shot 清洗：對 `len(term)<8 AND date startswith "2026"` 的列把 `draw_date` 清成 `""`（保留 n1-n6 真實開獎號碼）
+    2. 利用 `download()` 既有的 `if d.draw_date` filter — 空 date 自動被排除在 `existing_dates` set 外、不會誤殺新真實 date
+    3. UI `load_recent_preview` 對空 date 顯示 `—`（既有 fallback、無需改 code）
+    4. 引擎零影響（`history_engine` / `lotto_picker` 不用 date）
+    5. 一次性清洗結果：518 列 sanitized + 1 列保留真實 date (`115000053,2026/05/15`)
   - 防呆：existing 列即便 date 欄錯亂也保留；`if not fetched` raise；`git diff --quiet` 跳過無變動
-  - 測試：92 個 unit tests 全綠（新增 `test_current_month_failure_raises` / `test_older_month_failure_does_not_raise` / `test_diagnostic_log_present`）
+  - 測試：93 個 unit tests 全綠（新增 `test_empty_date_does_not_block_new_real_draws` 確保 sanitized empty-date 列不會污染未來 dedup set）
 
 ## 常用指令
 ```bash
