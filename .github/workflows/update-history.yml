@@ -9,7 +9,6 @@ on:
 permissions:
   contents: write
   issues: write
-  pull-requests: write
 
 concurrency:
   group: update-history
@@ -19,8 +18,12 @@ jobs:
   refresh:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout main
+        # Always update main regardless of which ref triggered (manual dispatch
+        # from a feature branch should still land data on main).
         uses: actions/checkout@v4
+        with:
+          ref: main
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -50,51 +53,21 @@ jobs:
             git diff --stat data/lotto649.csv
           fi
 
-      - name: Open auto-merge PR (CSV changed)
+      - name: Commit and push to main (CSV changed)
+        # Requires repo setting: Branches → main → "Allow specified actors to
+        # bypass required pull requests" includes `github-actions[bot]`.
+        # Without that toggle, this step 403s and `Open issue on failure` fires.
         if: steps.diff.outputs.changed == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: bash
         run: |
-          set -x
-          BRANCH="auto/data-update-$(date -u +'%Y%m%d-%H%M%S')"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -b "$BRANCH" || { echo "::error::checkout -b failed"; exit 1; }
           git add data/lotto649.csv
-          git commit -m "data: 自動更新樂透歷史 ($(date -u +'%Y-%m-%d %H:%M UTC'))" || { echo "::error::commit failed"; exit 1; }
-          git push origin "$BRANCH" || { echo "::error::push failed"; exit 1; }
-
-          # PR body via heredoc to avoid YAML/bash escaping pitfalls
-          BODY_FILE=$(mktemp)
-          cat > "$BODY_FILE" <<EOF
-          由 update-history workflow 自動產生 (cron 週二/五 22:00 GMT+8 或手動觸發)。
-
-          Run: $RUN_URL
-
-          CSV 變動由 scraper v3.3 (date-dedupe) 直打官方 API 抓取；走 PR 流程繞過 main branch protection。
-          EOF
-
-          PR_CREATE_LOG=$(mktemp)
-          if PR_URL=$(gh pr create --base main --head "$BRANCH" \
-              --title "data: 自動更新樂透歷史 $(date -u +'%Y-%m-%d')" \
-              --body-file "$BODY_FILE" 2>"$PR_CREATE_LOG"); then
-            echo "Created PR: $PR_URL"
-          else
-            echo "::error::gh pr create failed:"
-            cat "$PR_CREATE_LOG"
-            echo "::error::Branch $BRANCH was pushed but PR not created. Create PR manually from GitHub UI."
-            exit 1
-          fi
-
-          # Best-effort merge: try auto-merge → direct merge → leave PR open. Step succeeds either way.
-          if gh pr merge "$PR_URL" --squash --auto --delete-branch 2>/dev/null; then
-            echo "Auto-merge scheduled."
-          elif gh pr merge "$PR_URL" --squash --delete-branch 2>/dev/null; then
-            echo "Merged immediately."
-          else
-            echo "::warning::Auto-merge failed; PR open for manual review: $PR_URL"
-          fi
+          git commit -m "data: 自動更新樂透歷史 ($(date -u +'%Y-%m-%d %H:%M UTC'))"
+          # Rebase defensively in case a human pushed to main between checkout
+          # and now. The concurrency group already serializes workflow runs.
+          git pull --rebase origin main
+          git push origin main
 
       - name: Open issue on failure
         if: failure()
@@ -109,7 +82,7 @@ jobs:
             echo ""
             echo "排查清單："
             echo "1. **Run scraper** 紅燈 → 官方 API 異常 / Cloudflare 擋 / 依賴問題"
-            echo "2. **Open auto-merge PR** 紅燈 → branch protection / token 權限 / PR 衝突"
+            echo "2. **Commit and push to main** 紅燈 → bot 沒在 main bypass list（Settings → Branches → main → Allow specified actors to bypass required pull requests）/ rebase 衝突"
             echo "3. 看下方 scraper log tail（含 HTTP status / body preview / per-month row count）"
             echo ""
             echo "手動補救：本機 \`python -m src.scraper.lotto649_downloader --periods 50 --verbose\` 並透過 UI 上傳 CSV。"

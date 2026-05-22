@@ -72,6 +72,12 @@ my-lottery-2026/
     3. `download()` 加診斷 log（`fetched_max / existing_max / added`）便於 Actions log 直接定位
     4. workflow `Run scraper` step 用 `tee /tmp/scraper.log` + `set -o pipefail` 留存輸出
     5. `Open issue on failure` step 把 scraper log tail 50 行包進 issue body（含 HTTP status / body preview / per-month count）
+  - **第六層 (v3.5 — 拿掉 PR 噪音)**：v3.2-3.4 走 PR 流程繞 main protection，每次 data 更新都產生 closed PR (週二/五兩枚)。改方案 A：bot 加進 main bypass list、scraper 改回直推 main。**改動**：
+    1. workflow YAML 拿掉「建分支 → `gh pr create` → `gh pr merge`」三段，改 `git pull --rebase origin main && git push origin main`
+    2. `actions/checkout@v4` 加 `ref: main`，確保從 feature branch 手動 dispatch 也是更新 main 的 CSV
+    3. `permissions:` 拿掉 `pull-requests: write`（不再需要）
+    4. failure issue body 排查清單更新（PR 失敗模式 → bypass list 漏勾 / rebase 衝突）
+    5. **Repo Settings 必動**：Settings → Branches → `main` → Edit protection rule → 勾「Allow specified actors to bypass required pull requests」→ 加 `github-actions[bot]`（YAML 無法覆蓋此 repo 級開關，類似 v3.3 的「Allow Actions to create PRs」toggle）
   - 防呆：existing 列即便 date 欄錯亂也保留；`if not fetched` raise；`git diff --quiet` 跳過無變動
   - 測試：92 個 unit tests 全綠（新增 `test_current_month_failure_raises` / `test_older_month_failure_does_not_raise` / `test_diagnostic_log_present`）
 

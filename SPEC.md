@@ -187,11 +187,12 @@ def pick_tickets(
 | 環境 | ubuntu-latest, python 3.11, pip cache |
 | 抓檔 | `python -m src.scraper.lotto649_downloader --periods 50 --verbose 2>&1 \| tee /tmp/scraper.log`（`set -o pipefail` 保留 exit code） |
 | Commit 條件 | `git diff --quiet data/lotto649.csv` 失敗（有變動） |
-| 推送策略 | **PR-based**：建分支 `auto/data-update-{YYYYMMDD-HHMMSS}` → push → `gh pr create` → `gh pr merge --squash --auto --delete-branch` |
-| 為何繞 PR | main 受 branch protection 保護，禁直推；走 PR 由 GITHUB_TOKEN 合併（branch protection 須允許 `github-actions[bot]` 或不要求 review） |
+| 推送策略 | **直推 main** (v3.5)：`git pull --rebase origin main && git push origin main`（不再走 PR） |
+| Checkout | `actions/checkout@v4` with `ref: main` — 即使 workflow_dispatch 從 feature branch 觸發也強制更新 main |
+| 為何能直推 | `github-actions[bot]` 加入 main branch protection 的 bypass list；保留人類 PR 流程不受影響 |
 | 失敗通知 | `gh issue create`（`if: failure()`）含 run URL + 排查清單 + **scraper log tail 50 行**（HTTP status / body preview / per-month row count，v3.4 起） |
-| 並發 | `concurrency: update-history` 群組互斥 |
-| 權限 | YAML：`contents:write` + `issues:write` + `pull-requests:write`；**Repo Settings**：Actions → General → Workflow permissions → "Allow GitHub Actions to create and approve pull requests" 必須勾（預設 OFF、YAML 無法覆蓋） |
+| 並發 | `concurrency: update-history` 群組互斥；`pull --rebase` 防人類同時 push 衝突 |
+| 權限 | YAML：`contents:write` + `issues:write`（v3.5 拿掉 `pull-requests:write`）；**Repo Settings**：Branches → `main` → "Allow specified actors to bypass required pull requests" 加 `github-actions[bot]`（預設無、YAML 無法覆蓋） |
 
 ---
 

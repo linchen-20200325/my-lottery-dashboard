@@ -118,7 +118,7 @@
 GitHub Actions cron '0 14 * * 2,5'  (週二/週五 22:00 GMT+8, 開獎當晚)
                   │
                   ▼
-      checkout → setup-python 3.11 → pip install requirements.txt
+      checkout@v4 (ref: main) → setup-python 3.11 → pip install requirements.txt
                   │
                   ▼
       python -m src.scraper.lotto649_downloader --periods 50 --verbose 2>&1 | tee /tmp/scraper.log
@@ -129,24 +129,23 @@ GitHub Actions cron '0 14 * * 2,5'  (週二/週五 22:00 GMT+8, 開獎當晚)
                   │
                   ▼
       git diff --quiet data/lotto649.csv?
-       │ 無變動：跳過 PR
-       │ 有變動：建分支 auto/data-update-{ts} → push → gh pr create
+       │ 無變動：跳過 commit
+       │ 有變動：git add + commit + pull --rebase + push origin main  (v3.5)
                               │
                               ▼
-       gh pr merge --squash --auto --delete-branch  (v3.2)
-        │ 成功：squash 進 main → Streamlit Cloud 自動 redeploy
-        │ 失敗：fallback 為直接 merge；再失敗則留 PR 待手動 review
+       push 進 main → Streamlit Cloud 偵測 main 變動 → 自動 redeploy (1-3 分鐘)
                   │
                   ▼ (任一 step 失敗)
       gh issue create --title "[auto-update] 樂透歷史更新失敗 YYYY-MM-DD"
-       (含 run URL + scraper vs PR 兩階段排查清單 + scraper log tail 50 行)
+       (含 run URL + scraper/push 兩階段排查清單 + scraper log tail 50 行)
 ```
 
 **設計取捨**：
-- **PR 流程 (v3.2)**：main 受 branch protection 保護禁直推；改建短命分支 + auto-merge 繞過。失敗時保留 PR 提供 audit trail。
-- **`workflow_dispatch`**：保留手動觸發以支援 dry run 與緊急補檔。
-- **`concurrency: update-history`**：cron + manual 重疊時不 race。
-- **權限**：`contents:write + issues:write + pull-requests:write`（PR 流程需要）。
+- **直推 main (v3.5)**：v3.2-3.4 走 PR 流程繞 branch protection，每次更新產生 closed PR 噪音。改 bot 加 main bypass list、scraper 直推（PR 流程僅留給人類）。
+- **`workflow_dispatch`**：保留手動觸發以支援 dry run 與緊急補檔；checkout 強制 `ref: main` 即使從 feature branch dispatch 也是更新 main。
+- **`concurrency: update-history`**：cron + manual 重疊時不 race；`pull --rebase` 防人類同時 push 衝突。
+- **權限**：`contents:write + issues:write`（v3.5 拿掉 `pull-requests:write`）。
+- **Repo Settings 依賴**：`main` branch protection 須勾「Allow specified actors to bypass required pull requests」+ 加 `github-actions[bot]`（YAML 無法覆蓋）。
 
 ---
 
