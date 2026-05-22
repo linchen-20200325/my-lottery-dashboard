@@ -285,6 +285,38 @@ class TestDownloadDedupByDate(unittest.TestCase):
             content = csv_path.read_text(encoding="utf-8")
             self.assertIn("9999,not-a-date", content)
 
+    def test_empty_date_does_not_block_new_real_draws(self):
+        """Sanitized legacy rows (draw_date="") must NOT contribute to the
+        dedup set — otherwise the next real fetch silently drops every new
+        draw (the 2026-05-19 catastrophe).
+
+        Pre-sanitize bug: a fabricated row `2094,2026/5/19,...` squatted the
+        canonical date key `2026/05/19`; real 5/19 from API matched → skipped.
+        Post-sanitize: same row carries `draw_date=""`, which the existing-set
+        comprehension filters out via `if d.draw_date`.
+        """
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            csv_path = Path(tmp) / "lotto.csv"
+            csv_path.write_text(
+                "draw_term,draw_date,n1,n2,n3,n4,n5,n6,special\n"
+                "2094,,5,8,9,35,38,44,31\n",  # legacy sanitized — empty date
+                encoding="utf-8",
+            )
+            api_draws = [
+                # Real 5/19 from API — must land despite 2094's prior squatting
+                scraper.Draw("115000054", "2026/05/19",
+                             3, 11, 22, 29, 38, 45, 12),
+            ]
+            with patch.object(scraper, "fetch", return_value=api_draws):
+                count = scraper.download(periods=10, output=csv_path)
+            self.assertEqual(count, 2)  # legacy 2094 preserved + real 5/19 added
+            content = csv_path.read_text(encoding="utf-8")
+            self.assertIn("115000054,2026/05/19", content)
+            self.assertIn("2094,,", content)  # legacy row stays empty-dated
+
 
 class TestSaveCsvSort(unittest.TestCase):
     """save_csv must put newest real draw first regardless of term scheme.
