@@ -115,7 +115,7 @@
 **檔案**：`.github/workflows/update-history.yml`
 
 ```
-GitHub Actions cron '0 14 * * 2,5'  (週二/週五 22:00 GMT+8, 開獎當晚)
+GitHub Actions cron (v3.7: 4 槽位避開 :00 整點延遲，週二/五 22:23/22:53/23:23/00:23 GMT+8)
                   │
                   ▼
       checkout@v4 (ref: main) → setup-python 3.11 → pip install requirements.txt

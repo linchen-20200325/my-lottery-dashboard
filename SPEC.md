@@ -182,7 +182,7 @@ def pick_tickets(
 
 ## 5. CI 契約（`.github/workflows/update-history.yml`）
 
-| 觸發 | cron `0 14 * * 2,5`（GMT+8 22:00 週二/五）+ `workflow_dispatch` |
+| 觸發 | cron 4 槽位 `23 14`, `53 14`, `23 15`, `23 16 * * 2,5`（GMT+8 22:23 / 22:53 / 23:23 / 00:23 容錯：避開 :00 整點延遲 + 多跑覆蓋 API 上線延遲）+ `workflow_dispatch` |
 |---|---|
 | 環境 | ubuntu-latest, python 3.11, pip cache |
 | 抓檔 | `python -m src.scraper.lotto649_downloader --periods 50 --verbose 2>&1 \| tee /tmp/scraper.log`（`set -o pipefail` 保留 exit code） |

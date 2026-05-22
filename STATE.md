@@ -77,6 +77,7 @@ my-lottery-2026/
     2. `actions/checkout@v4` 加 `ref: main`，確保從 feature branch 手動 dispatch 也是更新 main 的 CSV
     3. `permissions:` 拿掉 `pull-requests: write`（不再需要）
     4. failure issue body 排查清單更新（PR 失敗模式 → bypass list 漏勾 / rebase 衝突）
+  - **第八層 (v3.7 — cron 強化容錯)**：2026-05-22 週五 22:00 cron 沒準時跑（或跑了但 API 5/22 那期還沒上），到 23:10 main 仍無新 commit。GitHub 官方文件明說 `:00` 整點高負載易延遲/跳過；台灣彩券 21:30 GMT+8 開獎、API 上線常拖 30-60 分。**修復**：cron schedule 從單一 `0 14 * * 2,5` 改 4 槽位 `23 14`, `53 14`, `23 15`, `23 16 * * 2,5`（22:23 / 22:53 / 23:23 / 00:23 GMT+8）— 避開整點 + 涵蓋開獎後 1-3 小時。零副作用：`concurrency: update-history` 互鎖防重疊、`added=0` 不 commit、`if not fetched: raise` 防呆。
   - **第七層 (v3.6 — 合成 date 污染清洗)**：2026-05-22 v3.5 merge 後 run #7 仍綠燈無 commit。v3.4 診斷 log 一翻兩瞪眼：`fetched max_date=2026/05/19` ✅（API 真有 5/19）但 `existing max_date=2026/12/31` ⚠️ — 既有 CSV 內 519 筆**全部年份都是 2026**（包括 5/19、12/31 等假 date），是當初「用真實 518 期覆蓋合成樣本」時 number 對了但 date 全用合成日期填充的遺留 bug。`期別 2094` 那筆假 date `2026/5/19` 把 API 真實 5/19 的 dedup key 佔走 → 真資料被誤殺。**修復**：
     1. `scripts/sanitize_legacy_dates.py` one-shot 清洗：對 `len(term)<8 AND date startswith "2026"` 的列把 `draw_date` 清成 `""`（保留 n1-n6 真實開獎號碼）
     2. 利用 `download()` 既有的 `if d.draw_date` filter — 空 date 自動被排除在 `existing_dates` set 外、不會誤殺新真實 date
