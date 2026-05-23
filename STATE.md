@@ -55,6 +55,16 @@ my-lottery-2026/
 - [x] UI 最近 N 期歷史預覽（驗證資料正確性，slider 1-20）  ✅ 2026-05-13
 - [x] v6 auto-key silent drop + Phase 4 Round 2 disjoint fallback  ✅ 2026-05-14
 
+## Phase 7 — Pair-disjoint 模式 (v5.1)
+- [x] **五注 pair 不重複**  ✅ 2026-05-22
+  - 動機：使用者反饋既有「R2 number-disjoint fallback」仍會讓多注共享 pair（例 5 注全帶 `03,36`、`{03,36}` 在 5 注重複），偏離「分散押注」直覺
+  - 設計：UI toggle「五注 pair 不重複」+ slider「允許 pair 共享上限」(0-3) → 漸進放寬 sub-rounds
+  - 演算法：`_generate_pair_disjoint()` — 對每候選 combo 算 15 個 pair，若與 `used_pairs` 交集 > sub_round 則跳過；sub_round 從 0 漸增至 `pair_overlap_max`
+  - 約束：開啟模式時 `len(key_set) > 1` → `ValueError`（2 顆膽碼會強制 key-pair 出現在每注、與 strict 互斥）
+  - UI：顯示「嚴格 K 注 + 放寬 (N-K) 注」診斷；不足 `num_tickets` 時提示調高 slider
+  - 測試：+6 個 unit tests（strict 0/1 key、2 keys raises、negative overlap raises、default off 維持既有行為、relaxation 確實有效）— 共 99 tests 全綠 (93 → 99)
+  - 設計取捨：pair_disjoint 啟用時**取代**既有 R1/R2 邏輯（pair-disjoint 邏輯上比 number-disjoint 強，subsumes 之）；toggle 關閉保留既有行為、向下相容
+
 ## 後續規劃 (Phase 6 — Future Work)
 - [x] **修正『觸發 GitHub Actions 抓檔』按鈕 URL**  ✅ 2026-05-18（舊倉庫 `CornCorn-2015/my-lottery-2026` → 新倉庫 `LinChen-20200325/my-lottery-dashboard`，使用者點擊不再 404）
 - [x] **爬蟲自動更新歷史資料**  ✅ 2026-05-16（v3.3 + repo toggle 全鏈打通；CSV 519 期，最新 2026/5/15）

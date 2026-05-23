@@ -109,6 +109,69 @@ def _passes_filters(
     return True
 
 
+def _ticket_pairs(ticket: tuple[int, ...]) -> set[frozenset[int]]:
+    """All C(6,2)=15 pairs in a ticket as frozensets (hashable for set ops)."""
+    return {frozenset(p) for p in combinations(ticket, 2)}
+
+
+def _generate_pair_disjoint(
+    *,
+    pool: set[int],
+    key_set: set[int],
+    s_lo: int,
+    s_hi: int,
+    num_tickets: int,
+    pair_overlap_max: int,
+    rng: random.Random,
+) -> list[tuple[int, ...]]:
+    """Greedy progressive-relaxation pair-disjoint generator.
+
+    Each ticket includes `key_set` (size 0 or 1) + drag numbers. Across the
+    output list, no two tickets share more than `sub_round` pairs, where
+    `sub_round` starts at 0 (strict pair-disjoint) and increments until
+    either `num_tickets` is reached or `pair_overlap_max` is exhausted.
+
+    Why `≤ 1` key: with `len(key_set) >= 2`, the key-only pair would appear
+    in every ticket and violate strict pair-disjoint by construction. The
+    caller (`generate_tickets`) raises before reaching this helper.
+
+    Filters: the same 5-filter cascade (sum, odd, big, prime, consecutive)
+    applies at every sub-round — only pair-overlap relaxes.
+    """
+    results: list[tuple[int, ...]] = []
+    seen: set[tuple[int, ...]] = set()
+    used_pairs: set[frozenset[int]] = set()
+
+    drag_candidates = pool - key_set
+    needed = TICKET_SIZE - len(key_set)
+    if len(drag_candidates) < needed:
+        return results  # caller already validated drag pool size; defensive
+    all_combos = list(combinations(sorted(drag_candidates), needed))
+
+    for sub_round in range(pair_overlap_max + 1):
+        if len(results) >= num_tickets:
+            break
+        # Re-shuffle each sub-round so the relaxed pass doesn't keep retrying
+        # the same combo order that strict mode already exhausted.
+        rng.shuffle(all_combos)
+        for combo in all_combos:
+            if len(results) >= num_tickets:
+                break
+            ticket = tuple(sorted(key_set.union(combo)))
+            if ticket in seen:
+                continue
+            if not _passes_filters(ticket, s_lo, s_hi, apply_secondary=True):
+                continue
+            ticket_pairs = _ticket_pairs(ticket)
+            if len(ticket_pairs & used_pairs) > sub_round:
+                continue
+            results.append(ticket)
+            seen.add(ticket)
+            used_pairs |= ticket_pairs
+
+    return results
+
+
 # --- Core algorithm -----------------------------------------------------------
 
 
@@ -133,6 +196,10 @@ def generate_tickets(
     manual_sum_range: tuple[int, int] | None = None,
     # Pre-computed analysis (UI passes a cached analysis to avoid re-running)
     precomputed_analysis: HistoryAnalysis | None = None,
+    # Pair-disjoint mode (v5.1): every 2-number pair appears in ≤1 ticket
+    # across the output; progressively relaxes if strict can't fill num_tickets.
+    pair_disjoint: bool = False,
+    pair_overlap_max: int = 0,
     rng: random.Random | None = None,
 ) -> tuple[list[tuple[int, ...]], HistoryAnalysis]:
     """Produce up to `num_tickets` filtered combinations + analysis snapshot.
@@ -238,6 +305,34 @@ def generate_tickets(
             raise ValueError("manual_sum_range lo must be <= hi")
     else:
         s_lo, s_hi = analysis.sum_min_dynamic, analysis.sum_max_dynamic
+
+    # --- Pair-disjoint branch (v5.1) ---
+    # When enabled, replaces the R1/R2 number-disjoint pipeline entirely:
+    # pair-disjoint is strictly stronger (every 2-number pair appears in ≤1
+    # ticket, which subsumes every-number-distinct). The toggle is opt-in
+    # via the UI; default off preserves the existing R1/R2 behaviour for all
+    # other callers and tests.
+    if pair_disjoint:
+        if not isinstance(pair_overlap_max, int) or isinstance(pair_overlap_max, bool):
+            raise ValueError("pair_overlap_max must be a non-negative integer")
+        if pair_overlap_max < 0:
+            raise ValueError("pair_overlap_max must be >= 0")
+        if len(key_set) > 1:
+            raise ValueError(
+                f"pair_disjoint mode requires ≤ 1 key (got {len(key_set)}): "
+                "a multi-key set forces the key-pair into every ticket, "
+                "breaking strict pair-disjoint by construction"
+            )
+        tickets = _generate_pair_disjoint(
+            pool=pool,
+            key_set=key_set,
+            s_lo=s_lo,
+            s_hi=s_hi,
+            num_tickets=num_tickets,
+            pair_overlap_max=pair_overlap_max,
+            rng=rng,
+        )
+        return tickets, analysis
 
     # Round 1: standard 5-filter cascade with ticket-level uniqueness.
     results: list[tuple[int, ...]] = []
