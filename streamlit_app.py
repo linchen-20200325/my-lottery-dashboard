@@ -375,12 +375,27 @@ if pair_disjoint and manual_keys and len(manual_keys) >= 2:
     )
     st.stop()
 
+# pair-disjoint + 自動雙膽（1 熱 + 1 冷）會強制 key-pair 在每注重複，與本模式互斥。
+# 自動保留 1 顆熱膽碼當錨點，其餘交給拖碼池（manual ≥2 顆已於上方 guard 擋下）。
+pd_auto_key: list[int] | None = None
+if pair_disjoint and not manual_keys:
+    _auto = [k for k in analysis.auto_keys if k not in manual_excluded_numbers]
+    if len(_auto) > 1:
+        _hot_set = set(analysis.hot)
+        pd_auto_key = [next((k for k in _auto if k in _hot_set), _auto[0])]
+        st.info(
+            f"🧩 pair-disjoint 模式：自動雙膽會強制 pair 重複，"
+            f"已自動保留 1 顆熱膽碼 {pd_auto_key[0]:02d}（其餘交由拖碼池選號）。"
+        )
+
+keys_arg = manual_keys if manual_keys else pd_auto_key
+
 rng = random.Random(seed) if seed else None
 try:
     tickets, _ = generate_tickets(
         history_draws=history if history else [[1, 2, 3, 4, 5, 6]],  # dummy seed if all-fallback
         num_tickets=num_tickets,
-        manual_keys=manual_keys if manual_keys else None,
+        manual_keys=keys_arg,
         manual_excluded_tails=manual_excluded_tails,
         manual_excluded_numbers=list(manual_excluded_numbers) if manual_excluded_numbers else None,
         manual_sum_range=manual_sum_range,
@@ -499,7 +514,7 @@ else:
     st.success(f"✅ 已產出 {len(tickets)} 注合格組合（目標 {num_tickets} 注）")
 
 # --- Cost panel ---
-keys_used = manual_keys if manual_keys else analysis.auto_keys
+keys_used = keys_arg if keys_arg else analysis.auto_keys
 tail_set_used = (
     set(manual_excluded_tails)
     if manual_excluded_tails is not None

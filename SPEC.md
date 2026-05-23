@@ -116,6 +116,7 @@ def pick_tickets(
 - 啟用條件：`pair_disjoint=True`（UI toggle）
 - 規則：跨所有產出 ticket，任 2 顆號碼組成的 pair 出現次數 ≤ `pair_overlap_max + 1`（sub_round 由 0 漸增）
 - 約束：`len(key_set) > 1` → `ValueError`（key-pair 強制重複、與本模式互斥）
+  - **UI 層 (v5.1.1)**：膽碼留自動時 `auto_keys` 為雙膽（1 熱+1 冷）會撞此約束 → UI 在呼叫前自動保留 1 顆熱膽碼當錨點、`st.info` 提示（manual ≥2 顆仍由 guard 擋下並提示用戶調整）
 - 5 大濾網**仍適用**（漸進放寬的只有 pair-overlap、不放寬濾網本身）
 - sub-round 0 = 嚴格 pair-disjoint；每多 +1 容忍多 1 個共享 pair
 - 候選 ticket 計算 `C(6,2)=15` 個 pair、與 `used_pairs` 取交集大小、超過當前 sub_round 即跳過

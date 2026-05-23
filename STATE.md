@@ -64,6 +64,11 @@ my-lottery-2026/
   - UI：顯示「嚴格 K 注 + 放寬 (N-K) 注」診斷；不足 `num_tickets` 時提示調高 slider
   - 測試：+6 個 unit tests（strict 0/1 key、2 keys raises、negative overlap raises、default off 維持既有行為、relaxation 確實有效）— 共 99 tests 全綠 (93 → 99)
   - 設計取捨：pair_disjoint 啟用時**取代**既有 R1/R2 邏輯（pair-disjoint 邏輯上比 number-disjoint 強，subsumes 之）；toggle 關閉保留既有行為、向下相容
+- [x] **v5.1.1 — 自動雙膽 + pair-disjoint 互斥修復**  ✅ 2026-05-23
+  - Bug：`auto_keys` 預設為「1 熱 + 1 冷」雙膽（`history_engine._auto_keys`），故 pair-disjoint 開啟、膽碼留自動時 `len(key_set)==2` → `generate_tickets` 拋 `ValueError: requires ≤ 1 key (got 2)`，使用者每次都中招。原 UI guard (`streamlit_app.py:371`) 只檢查 *manual* keys、漏掉 auto 路徑
+  - 修復：UI 在呼叫前偵測「pair_disjoint AND 無 manual keys AND auto_keys 去除排除後 ≥2」→ 自動保留 1 顆**熱**膽碼當錨點（`next(k in hot)`），`st.info` 提示；`keys_arg` 同步餵給 generator 與成本面板 `keys_used`，顯示一致
+  - 不動 generator：引擎仍對 *manual* ≥2 keys 拋錯（契約安全網，`test_two_keys_raises` 保護）；避免 mutate `@st.cache_data` 的 analysis 物件
+  - 驗證：本地重現 auto_keys=[12,39]→trim [39]、5 注零 shared-pair、key 全注命中；6 個 pair-disjoint tests 全綠
 
 ## 後續規劃 (Phase 6 — Future Work)
 - [x] **修正『觸發 GitHub Actions 抓檔』按鈕 URL**  ✅ 2026-05-18（舊倉庫 `CornCorn-2015/my-lottery-2026` → 新倉庫 `LinChen-20200325/my-lottery-dashboard`，使用者點擊不再 404）
