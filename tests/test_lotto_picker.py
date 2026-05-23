@@ -305,6 +305,130 @@ class TestSilentDropAndDisjoint(unittest.TestCase):
                 )
 
 
+class TestPairDisjoint(unittest.TestCase):
+    """v5.1: pair-disjoint mode + progressive overlap relaxation.
+
+    Strict invariant: across the output list, every 2-number pair appears in
+    at most ONE ticket. Relaxes per sub-round up to `pair_overlap_max`.
+    """
+
+    def _pair_overlap_counts(self, tickets):
+        """For each (i,j) pair of tickets, count shared 2-number pairs."""
+        from itertools import combinations as _combs
+        pair_sets = [
+            {frozenset(p) for p in _combs(t, 2)} for t in tickets
+        ]
+        return [
+            (i, j, len(pair_sets[i] & pair_sets[j]))
+            for i, j in _combs(range(len(tickets)), 2)
+        ]
+
+    def test_strict_zero_keys(self):
+        """0 膽碼 + strict (overlap_max=0) → every ticket pair-disjoint."""
+        analysis = _custom_analysis(auto_keys=[])
+        tickets, _ = generate_tickets(
+            history_draws=HISTORY,
+            num_tickets=3,
+            manual_excluded_tails=[],  # don't shrink pool
+            precomputed_analysis=analysis,
+            pair_disjoint=True,
+            pair_overlap_max=0,
+            rng=random.Random(42),
+        )
+        self.assertGreaterEqual(len(tickets), 2)  # at least 2 to verify disjoint
+        for _i, _j, shared in self._pair_overlap_counts(tickets):
+            self.assertEqual(
+                shared, 0,
+                f"strict mode violated: tickets {_i},{_j} share {shared} pair(s)",
+            )
+
+    def test_strict_one_key(self):
+        """1 膽碼 + strict → key in every ticket, but other pairs disjoint."""
+        analysis = _custom_analysis(auto_keys=[7])
+        tickets, _ = generate_tickets(
+            history_draws=HISTORY,
+            num_tickets=3,
+            manual_excluded_tails=[],
+            precomputed_analysis=analysis,
+            manual_keys=[7],
+            pair_disjoint=True,
+            pair_overlap_max=0,
+            rng=random.Random(42),
+        )
+        self.assertGreaterEqual(len(tickets), 2)
+        for t in tickets:
+            self.assertIn(7, t)
+        for _i, _j, shared in self._pair_overlap_counts(tickets):
+            self.assertEqual(shared, 0)
+
+    def test_two_keys_raises(self):
+        """≥2 膽碼 + pair_disjoint → ValueError (key-pair would repeat)."""
+        analysis = _custom_analysis(auto_keys=[7, 33])
+        with self.assertRaises(ValueError) as cm:
+            generate_tickets(
+                history_draws=HISTORY,
+                num_tickets=3,
+                precomputed_analysis=analysis,
+                manual_keys=[7, 33],
+                pair_disjoint=True,
+                rng=random.Random(42),
+            )
+        self.assertIn("pair_disjoint", str(cm.exception))
+
+    def test_negative_overlap_raises(self):
+        analysis = _custom_analysis(auto_keys=[])
+        with self.assertRaises(ValueError):
+            generate_tickets(
+                history_draws=HISTORY,
+                num_tickets=3,
+                precomputed_analysis=analysis,
+                pair_disjoint=True,
+                pair_overlap_max=-1,
+                rng=random.Random(42),
+            )
+
+    def test_default_off_preserves_legacy_keys_in_tickets(self):
+        """pair_disjoint=False (default) → existing R1/R2 path; 2 keys OK."""
+        analysis = _custom_analysis(auto_keys=[7, 33])
+        tickets, _ = generate_tickets(
+            history_draws=HISTORY,
+            num_tickets=3,
+            precomputed_analysis=analysis,
+            manual_keys=[7, 33],
+            rng=random.Random(42),
+        )
+        # In legacy mode, 2 keys are allowed and every Round-1 ticket carries them.
+        self.assertGreaterEqual(len(tickets), 1)
+        # At least the first ticket (Round 1) must contain both keys.
+        self.assertIn(7, tickets[0])
+        self.assertIn(33, tickets[0])
+
+    def test_relaxation_kicks_in_when_strict_falls_short(self):
+        """Tight filter + many tickets → strict can't fill → relaxed sub-rounds
+        engage; final count grows with `pair_overlap_max`.
+        """
+        # Narrow sum range + many tickets to provoke strict shortfall
+        analysis = _custom_analysis(auto_keys=[], sum_lo=140, sum_hi=160)
+        strict_tickets, _ = generate_tickets(
+            history_draws=HISTORY,
+            num_tickets=20,
+            precomputed_analysis=analysis,
+            pair_disjoint=True,
+            pair_overlap_max=0,
+            rng=random.Random(42),
+        )
+        relaxed_tickets, _ = generate_tickets(
+            history_draws=HISTORY,
+            num_tickets=20,
+            precomputed_analysis=analysis,
+            pair_disjoint=True,
+            pair_overlap_max=3,
+            rng=random.Random(42),
+        )
+        # Relaxed must produce ≥ strict (progressive relaxation cannot shrink output)
+        self.assertGreaterEqual(len(relaxed_tickets), len(strict_tickets))
+
+
 class TestStats(unittest.TestCase):
     def test_stats_basic(self):
         s = ticket_stats([1, 2, 3, 4, 5, 6])

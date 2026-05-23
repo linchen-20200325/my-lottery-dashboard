@@ -235,6 +235,27 @@ with st.sidebar:
 
     st.header("⚙️ 產出")
     num_tickets = st.slider("注數", 1, 50, 5)
+
+    pair_disjoint = st.checkbox(
+        "🧩 五注 pair 不重複",
+        value=False,
+        help=(
+            "開啟後，任兩注之間沒有任何 2 號 pair 重複。"
+            "需 ≤ 1 顆膽碼（2 顆以上膽碼會強制 pair 重複，與本模式互斥）。"
+        ),
+    )
+    if pair_disjoint:
+        pair_overlap_max = st.slider(
+            "允許 pair 共享上限",
+            min_value=0, max_value=3, value=0, step=1,
+            help=(
+                "0 = 嚴格 pair-disjoint；湊不滿 N 注時可調高，"
+                "依序放寬到允許每注最多跟既有 ticket 共享 K 個 pair。"
+            ),
+        )
+    else:
+        pair_overlap_max = 0
+
     seed = st.number_input(
         "隨機種子（0 = 不固定）", min_value=0, max_value=10_000_000,
         value=0, step=1,
@@ -347,6 +368,13 @@ if manual_keys and manual_excluded_numbers:
         )
         st.stop()
 
+if pair_disjoint and manual_keys and len(manual_keys) >= 2:
+    st.error(
+        f"pair-disjoint 模式下手動膽碼最多 1 顆（目前 {len(manual_keys)} 顆）— "
+        "請改成 0 或 1 顆膽碼，或關閉「五注 pair 不重複」。"
+    )
+    st.stop()
+
 rng = random.Random(seed) if seed else None
 try:
     tickets, _ = generate_tickets(
@@ -357,6 +385,8 @@ try:
         manual_excluded_numbers=list(manual_excluded_numbers) if manual_excluded_numbers else None,
         manual_sum_range=manual_sum_range,
         precomputed_analysis=analysis,
+        pair_disjoint=pair_disjoint,
+        pair_overlap_max=pair_overlap_max,
         rng=rng,
     )
 except ValueError as exc:
@@ -411,6 +441,35 @@ if not tickets:
     )
     st.stop()
 
+# --- pair-disjoint mode: report strict vs relaxed split ---
+if pair_disjoint and len(tickets) >= 1:
+    from itertools import combinations as _combs_ui
+    _strict = 0
+    _relaxed = 0
+    _seen_pairs: set[frozenset[int]] = set()
+    for _t in tickets:
+        _ticket_pairs = {frozenset(p) for p in _combs_ui(_t, 2)}
+        if not (_ticket_pairs & _seen_pairs):
+            _strict += 1
+        else:
+            _relaxed += 1
+        _seen_pairs |= _ticket_pairs
+    if len(tickets) < num_tickets:
+        st.warning(
+            f"🧩 pair-disjoint：已產出 **{len(tickets)} / {num_tickets}** 注"
+            f"（嚴格 {_strict} 注 ｜ 放寬 {_relaxed} 注）— "
+            f"若需更多注，調高「允許 pair 共享上限」(目前 {pair_overlap_max})。"
+        )
+    else:
+        st.success(
+            f"🧩 pair-disjoint：已產出 {len(tickets)} 注"
+            f"（嚴格 {_strict} 注 ｜ 放寬 {_relaxed} 注）"
+        )
+    # Skip the legacy R1/R2 split (pair-disjoint replaces both rounds)
+    _skip_legacy_split = True
+else:
+    _skip_legacy_split = False
+
 # Detect Round 2 fallback tickets (those that don't carry the effective keys)
 _effective_keys = (
     set(manual_keys) if manual_keys
@@ -419,7 +478,9 @@ _effective_keys = (
 _r1 = [t for t in tickets if _effective_keys.issubset(t)] if _effective_keys else tickets
 _r2 = [t for t in tickets if not _effective_keys.issubset(t)] if _effective_keys else []
 
-if len(tickets) < num_tickets:
+if _skip_legacy_split:
+    pass  # pair-disjoint mode already reported above
+elif len(tickets) < num_tickets:
     if _r2:
         st.success(
             f"✅ 已產出 **{len(tickets)} / {num_tickets}** 注 "
