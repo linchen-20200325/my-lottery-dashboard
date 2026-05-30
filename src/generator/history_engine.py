@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import random
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from statistics import mean, pstdev
 from typing import Sequence
 

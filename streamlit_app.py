@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import random
+from itertools import combinations as _combs_ui
 from pathlib import Path
 
 import streamlit as st
@@ -458,7 +459,6 @@ if not tickets:
 
 # --- pair-disjoint mode: report strict vs relaxed split ---
 if pair_disjoint and len(tickets) >= 1:
-    from itertools import combinations as _combs_ui
     _strict = 0
     _relaxed = 0
     _seen_pairs: set[frozenset[int]] = set()

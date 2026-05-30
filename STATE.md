@@ -70,6 +70,12 @@ my-lottery-2026/
   - 不動 generator：引擎仍對 *manual* ≥2 keys 拋錯（契約安全網，`test_two_keys_raises` 保護）；避免 mutate `@st.cache_data` 的 analysis 物件
   - 驗證：本地重現 auto_keys=[12,39]→trim [39]、5 注零 shared-pair、key 全注命中；6 個 pair-disjoint tests 全綠
 
+## 代碼淨化與收尾完成 (v5.1.2)
+- [x] **代碼淨化 (Auto-Cleanup)**  ✅ 2026-05-30
+  - 範圍：`src/generator/history_engine.py`（移除 unused `field` import）、`streamlit_app.py`（將 `_combs_ui` inline import 提升至檔頂，移除重複定義）
+  - 全範圍掃描結果：無 commented-out dead code、無 print() debug 殘留、無 triple-blank lines、其他檔案 imports 全部 in-use
+  - 驗證：99 unit tests 全綠、syntax + AST 雙保險通過、未動任何業務邏輯/變數命名/演算法結構
+
 ## 後續規劃 (Phase 6 — Future Work)
 - [x] **修正『觸發 GitHub Actions 抓檔』按鈕 URL**  ✅ 2026-05-18（舊倉庫 `CornCorn-2015/my-lottery-2026` → 新倉庫 `LinChen-20200325/my-lottery-dashboard`，使用者點擊不再 404）
 - [x] **爬蟲自動更新歷史資料**  ✅ 2026-05-16（v3.3 + repo toggle 全鏈打通；CSV 519 期，最新 2026/5/15）
