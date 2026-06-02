@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import csv
-import io
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory

@@ -93,6 +93,12 @@ my-lottery-2026/
   - 全範圍掃描結果：無 commented-out dead code、無 print() debug 殘留、無 triple-blank lines、其他檔案 imports 全部 in-use
   - 驗證：99 unit tests 全綠、syntax + AST 雙保險通過、未動任何業務邏輯/變數命名/演算法結構
 
+## 代碼淨化與收尾完成 (v6.2)
+- [x] **代碼淨化 (Auto-Cleanup, post v6.0/v6.1)**  ✅ 2026-06-02
+  - 範圍：`tests/test_powerball_scraper.py`（移除 unused `import io`）
+  - 全範圍掃描結果（src/ + streamlit_app + scripts/ + tests/，21 個 .py 檔）：pyflakes 全清、無 commented-out dead code、無 print() debug 殘留（CLI `main()` 中 print 為合法輸出）、無 triple-blank lines、其他 import 全 in-use
+  - 驗證：`pyflakes` 全清、`py_compile` 通過、targeted unittest 11/11 全綠；未動任何業務邏輯/變數命名/演算法結構
+
 ## 後續規劃 (Phase 6 — Future Work)
 - [x] **修正『觸發 GitHub Actions 抓檔』按鈕 URL**  ✅ 2026-05-18（舊倉庫 `CornCorn-2015/my-lottery-2026` → 新倉庫 `LinChen-20200325/my-lottery-dashboard`，使用者點擊不再 404）
 - [x] **爬蟲自動更新歷史資料**  ✅ 2026-05-16（v3.3 + repo toggle 全鏈打通；CSV 519 期，最新 2026/5/15）
