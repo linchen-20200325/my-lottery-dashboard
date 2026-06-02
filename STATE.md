@@ -5,7 +5,7 @@
 > 本檔僅維持「**當前進度 + 常用指令**」（協定 §1 冷熱分離）
 
 ## 專案目標
-大樂透 (6/49) 量化訊號儀表板 (v5.0)。Streamlit Cloud 線上 App。
+台灣樂透量化訊號儀表板：**大樂透 (6/49) v5.1 + 威力彩 (6/38+1/8) v6.0**。Streamlit Cloud 線上 App。
 Signal-Driven · Defensive Architecture · Performance First。EV<0 認知；不預測。
 
 ## 技術棧
@@ -69,6 +69,23 @@ my-lottery-2026/
   - 修復：UI 在呼叫前偵測「pair_disjoint AND 無 manual keys AND auto_keys 去除排除後 ≥2」→ 自動保留 1 顆**熱**膽碼當錨點（`next(k in hot)`），`st.info` 提示；`keys_arg` 同步餵給 generator 與成本面板 `keys_used`，顯示一致
   - 不動 generator：引擎仍對 *manual* ≥2 keys 拋錯（契約安全網，`test_two_keys_raises` 保護）；避免 mutate `@st.cache_data` 的 analysis 物件
   - 驗證：本地重現 auto_keys=[12,39]→trim [39]、5 注零 shared-pair、key 全注命中；6 個 pair-disjoint tests 全綠
+
+## 威力彩 (Taiwan PowerLotto) 雙池訊號 (v6.0)
+- [x] **威力彩量化引擎全棧上線**  ✅ 2026-06-02
+  - 規則：第一區 6 from 1-38、第二區 1 from 1-8、開獎週一/週四
+  - 核心檔案：
+    - `src/generator/powerball_engine.py` — Z-Score gap layering + SMA 動態和值 + 雙池訊號（第一區 1-38 + 第二區 1-8 獨立 gap analyze）
+    - `src/generator/powerball_picker.py` — 五大濾網重校：PRIMES 裁至 ≤38 (12 顆)、BIG_THRESHOLD=19、和值 clamp [80,154]、奇偶/連號規則沿用；回傳 (tickets, bonus_pick, analysis) 三元組
+    - `src/data/loader_powerball.py` — CSV/JSON 雙來源；同時驗證主號池 1-38 與特別號 1-8
+    - `src/scraper/powerball_downloader.py` — 直打 `api.taiwanlottery.com/.../SuperLotto638Result`，沿用 lotto649_downloader v3.5 強化模式（UA + retry adapter + JSON 外層 retry + current-month 強制 raise 防 stale）
+    - `pages/1_威力彩.py` — Streamlit multipage 子頁；零侵入既有 `streamlit_app.py`
+    - `.github/workflows/update-powerball.yml` — cron `7/37 16,17 * * 1,4`（每週一、四 24:00-01:37 GMT+8 四槽容錯）
+    - `data/powerball.csv` — 倉庫內附空 header；首次 cron run 自動填入
+  - 第一區複用大樂透 v5.0 五階段（訊號 → cache + 降級 → shuffle → 五濾網），參數重校
+  - 第二區單獨 `_bonus_analyze()`：gap 排序、gap ≤ mean → hot、auto pick 從熱號隨機抽
+  - UI：multipage（左側自動 nav）；側欄全套滑桿 + 第二區「動態/手動」選擇 + pair-disjoint toggle
+  - 測試：+35 個 unit tests（engine 10 / picker 13 / scraper 12）— 共 134 tests 全綠 (99 → 134)
+  - 設計取捨：新建獨立模組而非泛型化既有 lotto649 — 避免影響 99 tests 與引入抽象稅；威力彩第二區邏輯特殊（1-8 池太小不切冷暖熱三層）
 
 ## 代碼淨化與收尾完成 (v5.1.2)
 - [x] **代碼淨化 (Auto-Cleanup)**  ✅ 2026-05-30

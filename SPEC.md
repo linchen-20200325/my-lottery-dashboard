@@ -1,4 +1,4 @@
-# SPEC — my-lottery-2026 v5.0
+# SPEC — my-lottery-2026 v6.0
 
 > 規格書（Specifications）。冷資料區，與 `ARCHITECTURE.md`（系統藍圖）、`STATE.md`（當前進度）、`CLAUDE.md`（治理協議）三檔協作。
 >
@@ -221,3 +221,58 @@ def pick_tickets(
 ---
 
 > 規格變動時：先改本檔 → 改 code → 確認測試 → STATE.md 標記 → PR + merge。
+
+---
+
+## 7. 威力彩契約 (v6.0)
+
+### 7.1 資料格式 `data/powerball.csv`
+
+| 欄位 | 型別 | 範例 | 約束 |
+|---|---|---|---|
+| `draw_term` | str | `"114000050"` | 唯一鍵 |
+| `draw_date` | str | `"2026/05/26"` | `YYYY/MM/DD`；空字串容許 |
+| `n1`-`n6` | int | `3, 11, 19, 22, 28, 35` | **1-38**、無重複 |
+| `special` | int | `7` | **1-8**（第二區，引擎使用） |
+
+### 7.2 引擎契約 `src.generator.powerball_engine`
+
+| 函式 | 簽名 | 不變式 |
+|---|---|---|
+| `analyze(draws, specials, ...)` | `(Seq[Seq[int]], Seq[int], ...) → PowerballAnalysis` | `draws` 非空、池 1-38；`specials` 池 1-8（可 `None`）；違反拋 `ValueError` |
+| `PowerballAnalysis.hot/warm/cold` | `list[int]` | 三集合不相交、聯集 = `{1..38}` |
+| `PowerballAnalysis.bonus_hot/cold` | `list[int]` | 聯集 = `{1..8}`；hot = `gap ≤ mean` |
+| `PowerballAnalysis.bonus_auto_pick` | `int` | `1 ≤ pick ≤ 8` |
+| `STATIC_FALLBACK_ANALYSIS.is_fallback` | `True` | sum 區間 `[90, 144]`、bonus_auto_pick = 1 |
+
+### 7.3 選號契約 `src.generator.powerball_picker.generate_tickets`
+
+| 參數 | 型別 | 預設 / 約束 |
+|---|---|---|
+| `history_draws` | `Seq[Seq[int]]` | 非空，每列 6 顆 1-38 |
+| `history_specials` | `Seq[int] | None` | 池 1-8 |
+| `num_tickets` | `int` | ≥ 1 |
+| `manual_keys` | `Iterable[int] | None` | 1-5 顆 1-38 |
+| `manual_bonus` | `int | None` | 1-8；`None` 走 auto_pick |
+| `manual_excluded_numbers` | `Iterable[int] | None` | 1-38；與 `manual_keys` 不可衝突 |
+| `pair_disjoint` | `bool` | `True` 時 key_set ≤ 1 |
+
+**回傳**：`(tickets: list[tuple[int,...]], bonus_pick: int, analysis: PowerballAnalysis)`
+
+**五大濾網（1-38 池重校）**：
+1. 奇數數量 ∈ {2, 3, 4}
+2. 大數 (> 19) ≥ 3 顆
+3. 質數 ∈ [1, 3] 顆（PRIMES_SET = {2,3,5,7,11,13,17,19,23,29,31,37}）
+4. 連號對數 ≤ 2
+5. 和值 ∈ 動態 `[sum_min_dynamic, sum_max_dynamic]`（fallback `[90, 144]`）
+
+### 7.4 自動更新 CI 契約 `.github/workflows/update-powerball.yml`
+
+| 項目 | 規格 |
+|---|---|
+| Cron 槽位 | `7/37 16,17 * * 1,4`（4 槽）= 00:07/00:37/01:07/01:37 GMT+8 翻日 |
+| 開獎時程 | 週一、週四 20:00 GMT+8 開獎；cron 跑在隔日 00:07 起（≈ 4h buffer） |
+| API endpoint | `https://api.taiwanlottery.com/TLCAPIWeB/Lottery/SuperLotto638Result` |
+| Concurrency | `update-powerball` 群組互斥（與 lotto649 不衝突） |
+| Commit | `git diff --quiet data/powerball.csv` 失敗才 commit；零變動零 noise |
+| Failure | `gh issue create` + scraper log tail 50 行 |

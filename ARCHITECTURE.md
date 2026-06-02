@@ -1,6 +1,7 @@
-# ARCHITECTURE — my-lottery-2026 v5.0
+# ARCHITECTURE — my-lottery-2026 v6.0
 
 > 系統架構藍圖。冷資料區，配合根目錄 `STATE.md`（熱資料：當前進度）、`CLAUDE.md`（治理協議）使用。
+> v6.0 起：**雙樂透**（大樂透 6/49 v5.1 + 威力彩 6/38+1/8 v6.0），Streamlit multipage 並列。
 
 ---
 
@@ -179,6 +180,37 @@ GitHub Actions cron (v3.7: 4 槽位避開 :00 整點延遲，週二/五 22:23/22
 - **改抓檔來源**：改 `src/scraper/lotto649_downloader.py` → 本機驗證 → 若 GitHub Actions runner 行為不同，調 workflow YAML 或加 retry
 - **UI 改版**：改 `streamlit_app.py` → 本機 `streamlit run` → 確認 fallback 路徑仍在
 - **新階段任務**：寫進 `STATE.md` 後續規劃；本檔僅在「架構」改變時動
+
+---
+
+## 10. 威力彩模組 (v6.0)
+
+雙樂透架構：威力彩沿用大樂透五階段管線，獨立模組樹避免泛型化抽象稅。
+
+```
+src/generator/powerball_engine.py    # 雙池訊號（1-38 主 + 1-8 副）
+src/generator/powerball_picker.py    # 五大濾網重校（1-38 池）
+src/data/loader_powerball.py         # CSV/JSON loader（驗證雙池範圍）
+src/scraper/powerball_downloader.py  # SuperLotto638Result API
+pages/1_威力彩.py                     # Streamlit multipage 子頁
+.github/workflows/update-powerball.yml  # cron 週一/四 24:00 GMT+8（4 槽）
+data/powerball.csv                    # 倉庫內附歷史（首次 cron 自動填）
+```
+
+**與大樂透差異**：
+| 項目 | 大樂透 | 威力彩 |
+|---|---|---|
+| 主號池 | 1-49 (6 顆) | 1-38 (6 顆) |
+| 第二區 | 無（special 僅顯示） | 1-8 (1 顆，獨立池) |
+| PRIMES_SET | 15 顆 (≤47) | 12 顆 (≤37) |
+| BIG_THRESHOLD | 31 | 19 |
+| 和值 clamp | [90, 210] | [80, 154] |
+| 開獎 | 週二/週五 | 週一/週四 |
+| Cron | `0/23/53` 14-16 \* \* 2,5 | `7/37` 16-17 \* \* 1,4 |
+
+**第二區邏輯**（1-8 池太小不切冷暖熱三層）：純 gap 排序 → `gap ≤ mean` = hot、`> mean` = cold、auto pick 從 hot 隨機抽。`manual_bonus` 可覆寫。
+
+**UI 整合**：Streamlit 原生 multipage（`pages/` 目錄自動偵測），左側 nav 自動列出兩個樂透；`streamlit_app.py` 零侵入。
 
 ---
 

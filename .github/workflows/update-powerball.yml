@@ -1,0 +1,100 @@
+name: Update PowerLotto History
+
+on:
+  schedule:
+    # 開獎週一/週四 20:00 GMT+8。使用者指定「晚上 12 點」自動更新
+    # → 翻日 00:00 GMT+8（= 開獎日 UTC 16:00），多跑 4 槽避開 :00 整點高負載
+    # GitHub cron 在整點易延遲/跳過。concurrency group 互鎖防重疊。
+    - cron: '7 16 * * 1,4'    # 00:07 GMT+8（翻日，即週二/五）
+    - cron: '37 16 * * 1,4'   # 00:37 GMT+8
+    - cron: '7 17 * * 1,4'    # 01:07 GMT+8
+    - cron: '37 17 * * 1,4'   # 01:37 GMT+8
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: update-powerball
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run powerball scraper (incremental, 30 periods)
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m src.scraper.powerball_downloader --periods 30 --verbose 2>&1 \
+            | tee /tmp/powerball.log
+
+      - name: Detect CSV changes
+        id: diff
+        run: |
+          if git diff --quiet data/powerball.csv; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No new draws — skipping commit."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "CSV updated:"
+            git diff --stat data/powerball.csv
+          fi
+
+      - name: Commit and push to main (CSV changed)
+        if: steps.diff.outputs.changed == 'true'
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/powerball.csv
+          git commit -m "data: 自動更新威力彩歷史 ($(date -u +'%Y-%m-%d %H:%M UTC'))"
+          git pull --rebase origin main
+          git push origin main
+
+      - name: Open issue on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: bash
+        run: |
+          BODY_FILE=$(mktemp)
+          {
+            echo "Workflow run: $RUN_URL"
+            echo ""
+            echo "排查清單："
+            echo "1. **Run powerball scraper** 紅燈 → 官方 API 異常 / Cloudflare 擋 / 依賴問題"
+            echo "2. **Commit and push to main** 紅燈 → bot 沒在 main bypass list（Settings → Branches → main → Allow specified actors to bypass required pull requests）/ rebase 衝突"
+            echo "3. 看下方 scraper log tail（含 HTTP status / body preview / per-month row count）"
+            echo ""
+            echo "手動補救：本機 \`python -m src.scraper.powerball_downloader --periods 30 --verbose\` 並透過 UI 上傳 CSV。"
+            echo ""
+            echo "## Scraper log (last 50 lines)"
+            echo ""
+            echo '```'
+            if [ -f /tmp/powerball.log ]; then
+              tail -50 /tmp/powerball.log
+            else
+              echo "(no scraper log captured — step failed before tee)"
+            fi
+            echo '```'
+          } > "$BODY_FILE"
+          gh issue create \
+            --title "[auto-update] 威力彩歷史更新失敗 $(date -u +'%Y-%m-%d')" \
+            --body-file "$BODY_FILE"
