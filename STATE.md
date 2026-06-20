@@ -98,10 +98,10 @@ my-lottery-2026/
   - 範圍：`tests/test_powerball_scraper.py`（移除 unused `import io`）
 
 ## Phase 8 — 批次覆蓋模式 (v6.3)
-- [x] **批次推薦：注間號碼不重複（除膽碼外）**  ✅ 2026-06-20
-  - 動機：pair 不重複偏向結構分散；使用者需求為「各組號碼（除膽碼外）完全獨立」，目標是提升批次覆蓋率
+- [x] **批次推薦：注間號碼完全不重複**  ✅ 2026-06-20
+  - 動機：pair 不重複偏向結構分散；使用者需求為「各組號碼完全獨立」，目標是提升批次覆蓋率
   - 設計：新增 `batch_disjoint` toggle；移除 UI 的「五注 pair 不重複」與「允許 pair 共享上限」控制
-  - 演算法：`_generate_batch_disjoint()` 以 `used_drag_numbers` 做全域互斥；膽碼可跨注重複，拖碼不可重複
+  - 演算法：`_generate_batch_disjoint()` 以 `used_numbers` 做全域互斥；批次模式停用膽碼，6 顆號碼全不重複
   - 涵蓋：`lotto_picker` + `powerball_picker` 兩套引擎一致支援；兩邊 UI 同步切換
   - 測試：pair-disjoint 測試改為 batch-disjoint 測試，驗證「無膽碼時全注互斥」與「多膽碼時僅拖碼互斥」
   - 全範圍掃描結果（src/ + streamlit_app + scripts/ + tests/，21 個 .py 檔）：pyflakes 全清、無 commented-out dead code、無 print() debug 殘留（CLI `main()` 中 print 為合法輸出）、無 triple-blank lines、其他 import 全 in-use

@@ -306,7 +306,7 @@ class TestSilentDropAndDisjoint(unittest.TestCase):
 
 
 class TestBatchDisjoint(unittest.TestCase):
-    """批次推薦模式：除膽碼外，注間號碼完全不重複。"""
+    """批次推薦模式：注間 6 顆號碼完全不重複。"""
 
     def test_no_keys_all_numbers_disjoint(self):
         analysis = _custom_analysis(auto_keys=[])
@@ -323,7 +323,7 @@ class TestBatchDisjoint(unittest.TestCase):
             for j in range(i + 1, len(tickets)):
                 self.assertFalse(set(tickets[i]) & set(tickets[j]))
 
-    def test_two_keys_allowed_and_only_drag_is_disjoint(self):
+    def test_keys_are_disabled_and_all_numbers_disjoint(self):
         analysis = _custom_analysis(auto_keys=[7, 33], sum_lo=90, sum_hi=210)
         tickets, _ = generate_tickets(
             history_draws=HISTORY,
@@ -335,14 +335,9 @@ class TestBatchDisjoint(unittest.TestCase):
             rng=random.Random(42),
         )
         self.assertGreaterEqual(len(tickets), 1)
-        for t in tickets:
-            self.assertIn(7, t)
-            self.assertIn(33, t)
         for i in range(len(tickets)):
             for j in range(i + 1, len(tickets)):
-                drag_i = set(tickets[i]) - {7, 33}
-                drag_j = set(tickets[j]) - {7, 33}
-                self.assertFalse(drag_i & drag_j)
+                self.assertFalse(set(tickets[i]) & set(tickets[j]))
 
 
 class TestStats(unittest.TestCase):

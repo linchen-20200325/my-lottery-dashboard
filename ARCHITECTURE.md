@@ -92,7 +92,7 @@
 | **Phase 3** 矩陣均勻化 | `lotto_picker._shuffle_pool()` | `random.shuffle(combinations(drag, 6−len(key)))` | 種子可選 (`Random(seed)`) |
 | **Phase 4 Round 1** 五大濾網 | `lotto_picker._passes_filters()` | 達 `num_tickets` 即 break | 質數 ∈ [1,3]、連號對 ≤ 2、動態和值 (Phase 1)、奇數 ∈ {2,3,4}、大數(>31)≥3 |
 | **Phase 4 Round 2** Disjoint Fallback (v6) | `lotto_picker` 同檔 | 僅當 R1 < `num_tickets` 觸發 | 每張新票 6 顆主號**完全不與既有票共號** (`used_numbers ∩ combo = ∅`)；3 sub-rounds 漸進放寬 (動態和值 → static 90-210 → 完全跳和值)；R2 票不含膽碼 |
-| **Phase 4 Batch-disjoint** 覆蓋模式 (v6.3) | `lotto_picker` / `powerball_picker` | `batch_disjoint=True` 時啟用（取代 pair-disjoint） | 膽碼可重複；**非膽碼拖碼全域互斥**（`used_drag_numbers ∩ combo = ∅`），以提高批次覆蓋率 |
+| **Phase 4 Batch-disjoint** 覆蓋模式 (v6.3) | `lotto_picker` / `powerball_picker` | `batch_disjoint=True` 時啟用（取代 pair-disjoint） | 批次模式會停用膽碼；**6 顆號碼全域互斥**（`used_numbers ∩ combo = ∅`），以提高批次覆蓋率 |
 
 **自動膽碼衝突處理 (v6)**：`manual_keys=None` (動態模式) 時若 `analysis.auto_keys` 與 `manual_excluded_numbers` 衝突 → **silent drop** 衝突膽碼，不 raise；keys 被掏空則進入 no-膽碼 mode。手動 `manual_keys` 衝突仍 raise（用戶明確衝突）。
 

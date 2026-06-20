@@ -156,7 +156,7 @@ class TestBatchDisjoint(unittest.TestCase):
             for j in range(i + 1, len(tickets)):
                 self.assertFalse(set(tickets[i]) & set(tickets[j]))
 
-    def test_batch_disjoint_allows_two_keys(self):
+    def test_batch_disjoint_disables_keys_and_keeps_full_disjoint(self):
         tickets, _, _ = generate_tickets(
             _synthetic_draws(), _synthetic_specials(),
             num_tickets=3, manual_keys=[7, 17],
@@ -164,12 +164,9 @@ class TestBatchDisjoint(unittest.TestCase):
             batch_disjoint=True, rng=random.Random(11),
         )
         self.assertGreaterEqual(len(tickets), 1)
-        for t in tickets:
-            self.assertIn(7, t)
-            self.assertIn(17, t)
         for i in range(len(tickets)):
             for j in range(i + 1, len(tickets)):
-                self.assertFalse((set(tickets[i]) - {7, 17}) & (set(tickets[j]) - {7, 17}))
+                self.assertFalse(set(tickets[i]) & set(tickets[j]))
 
 
 if __name__ == "__main__":

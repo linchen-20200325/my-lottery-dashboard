@@ -114,7 +114,7 @@ def pick_tickets(
 
 **Phase 4 批次覆蓋模式 (v6.3, 取代 pair-disjoint)**：
 - 啟用條件：`batch_disjoint=True`（UI toggle）
-- 規則：跨所有產出 ticket，**非膽碼（拖碼）**不得重複；膽碼可在多注重複
+- 規則：跨所有產出 ticket，6 顆號碼皆不得重複（批次模式會停用膽碼）
 - 目標：在固定注數下提高號碼覆蓋率，降低注間重疊
 - 5 大濾網**仍適用**，不使用 pair-overlap 放寬
 
@@ -251,7 +251,7 @@ def pick_tickets(
 | `manual_keys` | `Iterable[int] | None` | 1-5 顆 1-38 |
 | `manual_bonus` | `int | None` | 1-8；`None` 走 auto_pick |
 | `manual_excluded_numbers` | `Iterable[int] | None` | 1-38；與 `manual_keys` 不可衝突 |
-| `batch_disjoint` | `bool` | `True` 時除膽碼外，注間號碼互斥 |
+| `batch_disjoint` | `bool` | `True` 時注間 6 顆號碼全互斥（停用膽碼） |
 
 **回傳**：`(tickets: list[tuple[int,...]], bonus_pick: int, analysis: PowerballAnalysis)`
 
