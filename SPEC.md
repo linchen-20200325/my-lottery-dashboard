@@ -112,14 +112,11 @@ def pick_tickets(
   3. `[6*1, 6*49] = [6, 294]` + 僅基本濾網（無和值約束）
 - 若候選 < 6 顆 → 不嘗試、直接回傳手上的 results
 
-**Phase 4 Pair-disjoint Mode (v5.1, 取代 R1+R2)**：
-- 啟用條件：`pair_disjoint=True`（UI toggle）
-- 規則：跨所有產出 ticket，任 2 顆號碼組成的 pair 出現次數 ≤ `pair_overlap_max + 1`（sub_round 由 0 漸增）
-- 約束：`len(key_set) > 1` → `ValueError`（key-pair 強制重複、與本模式互斥）
-  - **UI 層 (v5.1.1)**：膽碼留自動時 `auto_keys` 為雙膽（1 熱+1 冷）會撞此約束 → UI 在呼叫前自動保留 1 顆熱膽碼當錨點、`st.info` 提示（manual ≥2 顆仍由 guard 擋下並提示用戶調整）
-- 5 大濾網**仍適用**（漸進放寬的只有 pair-overlap、不放寬濾網本身）
-- sub-round 0 = 嚴格 pair-disjoint；每多 +1 容忍多 1 個共享 pair
-- 候選 ticket 計算 `C(6,2)=15` 個 pair、與 `used_pairs` 取交集大小、超過當前 sub_round 即跳過
+**Phase 4 批次覆蓋模式 (v6.3, 取代 pair-disjoint)**：
+- 啟用條件：`batch_disjoint=True`（UI toggle）
+- 規則：跨所有產出 ticket，**非膽碼（拖碼）**不得重複；膽碼可在多注重複
+- 目標：在固定注數下提高號碼覆蓋率，降低注間重疊
+- 5 大濾網**仍適用**，不使用 pair-overlap 放寬
 
 **回傳**：tuple of tuple；每 tuple 已 sorted、長度 6、無重複；長度 ≤ `num_tickets`（達不到時不報錯，由 UI 顯示張數差）。
 
@@ -127,8 +124,7 @@ def pick_tickets(
 - `manual_keys` 與 `manual_excluded_numbers` 衝突
 - `analysis` 為空 / 異常
 - `num_tickets < 1`
-- `pair_disjoint=True` 且 `len(keys) ≥ 2`
-- `pair_overlap_max` 非整數 / 負數
+- `batch_disjoint` 造成可行組合不足（不拋錯，回傳不足注數）
 
 ### 2.5 `src.scraper.lotto649_downloader.fetch(periods, session=None) -> list[Draw]`
 
@@ -255,7 +251,7 @@ def pick_tickets(
 | `manual_keys` | `Iterable[int] | None` | 1-5 顆 1-38 |
 | `manual_bonus` | `int | None` | 1-8；`None` 走 auto_pick |
 | `manual_excluded_numbers` | `Iterable[int] | None` | 1-38；與 `manual_keys` 不可衝突 |
-| `pair_disjoint` | `bool` | `True` 時 key_set ≤ 1 |
+| `batch_disjoint` | `bool` | `True` 時除膽碼外，注間號碼互斥 |
 
 **回傳**：`(tickets: list[tuple[int,...]], bonus_pick: int, analysis: PowerballAnalysis)`
 

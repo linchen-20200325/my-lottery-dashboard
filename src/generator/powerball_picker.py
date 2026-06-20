@@ -107,49 +107,40 @@ def _passes_filters(
     return True
 
 
-def _ticket_pairs(ticket: tuple[int, ...]) -> set[frozenset[int]]:
-    return {frozenset(p) for p in combinations(ticket, 2)}
-
-
-def _generate_pair_disjoint(
+def _generate_batch_disjoint(
     *,
     pool: set[int],
     key_set: set[int],
     s_lo: int,
     s_hi: int,
     num_tickets: int,
-    pair_overlap_max: int,
     rng: random.Random,
 ) -> list[tuple[int, ...]]:
-    """漸進放寬 pair-disjoint（同 lotto649 v5.1 演算法、池參數差異吸收）。"""
+    """批次模式：除膽碼外，各注號碼完全互斥以提高覆蓋率。"""
     results: list[tuple[int, ...]] = []
     seen: set[tuple[int, ...]] = set()
-    used_pairs: set[frozenset[int]] = set()
+    used_drag_numbers: set[int] = set()
 
     drag_candidates = pool - key_set
     needed = TICKET_SIZE - len(key_set)
     if len(drag_candidates) < needed:
         return results
     all_combos = list(combinations(sorted(drag_candidates), needed))
-
-    for sub_round in range(pair_overlap_max + 1):
+    rng.shuffle(all_combos)
+    for combo in all_combos:
         if len(results) >= num_tickets:
             break
-        rng.shuffle(all_combos)
-        for combo in all_combos:
-            if len(results) >= num_tickets:
-                break
-            ticket = tuple(sorted(key_set.union(combo)))
-            if ticket in seen:
-                continue
-            if not _passes_filters(ticket, s_lo, s_hi, apply_secondary=True):
-                continue
-            ticket_pairs = _ticket_pairs(ticket)
-            if len(ticket_pairs & used_pairs) > sub_round:
-                continue
-            results.append(ticket)
-            seen.add(ticket)
-            used_pairs |= ticket_pairs
+        combo_set = set(combo)
+        if combo_set & used_drag_numbers:
+            continue
+        ticket = tuple(sorted(key_set.union(combo)))
+        if ticket in seen:
+            continue
+        if not _passes_filters(ticket, s_lo, s_hi, apply_secondary=True):
+            continue
+        results.append(ticket)
+        seen.add(ticket)
+        used_drag_numbers |= combo_set
 
     return results
 
@@ -175,8 +166,7 @@ def generate_tickets(
     manual_sum_range: tuple[int, int] | None = None,
     manual_bonus: int | None = None,
     precomputed_analysis: PowerballAnalysis | None = None,
-    pair_disjoint: bool = False,
-    pair_overlap_max: int = 0,
+    batch_disjoint: bool = False,
     rng: random.Random | None = None,
 ) -> tuple[list[tuple[int, ...]], int, PowerballAnalysis]:
     """產生最多 `num_tickets` 注（第一區）+ 第二區單顆特別號 + 訊號快照。
@@ -278,23 +268,14 @@ def generate_tickets(
     else:
         s_lo, s_hi = analysis.sum_min_dynamic, analysis.sum_max_dynamic
 
-    # --- Pair-disjoint 分支 ---
-    if pair_disjoint:
-        if not isinstance(pair_overlap_max, int) or isinstance(pair_overlap_max, bool):
-            raise ValueError("pair_overlap_max must be a non-negative integer")
-        if pair_overlap_max < 0:
-            raise ValueError("pair_overlap_max must be >= 0")
-        if len(key_set) > 1:
-            raise ValueError(
-                f"pair_disjoint mode requires ≤ 1 key (got {len(key_set)})"
-            )
-        tickets = _generate_pair_disjoint(
+    # --- 批次覆蓋模式分支 ---
+    if batch_disjoint:
+        tickets = _generate_batch_disjoint(
             pool=pool,
             key_set=key_set,
             s_lo=s_lo,
             s_hi=s_hi,
             num_tickets=num_tickets,
-            pair_overlap_max=pair_overlap_max,
             rng=rng,
         )
         bonus_pick = _resolve_bonus(manual_bonus, analysis)

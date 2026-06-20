@@ -55,7 +55,7 @@ my-lottery-2026/
 - [x] UI 最近 N 期歷史預覽（驗證資料正確性，slider 1-20）  ✅ 2026-05-13
 - [x] v6 auto-key silent drop + Phase 4 Round 2 disjoint fallback  ✅ 2026-05-14
 
-## Phase 7 — Pair-disjoint 模式 (v5.1)
+## Phase 7 — Pair-disjoint 模式（歷史紀錄，已退役）(v5.1)
 - [x] **五注 pair 不重複**  ✅ 2026-05-22
   - 動機：使用者反饋既有「R2 number-disjoint fallback」仍會讓多注共享 pair（例 5 注全帶 `03,36`、`{03,36}` 在 5 注重複），偏離「分散押注」直覺
   - 設計：UI toggle「五注 pair 不重複」+ slider「允許 pair 共享上限」(0-3) → 漸進放寬 sub-rounds
@@ -83,7 +83,7 @@ my-lottery-2026/
     - `data/powerball.csv` — 倉庫內附空 header；首次 cron run 自動填入
   - 第一區複用大樂透 v5.0 五階段（訊號 → cache + 降級 → shuffle → 五濾網），參數重校
   - 第二區單獨 `_bonus_analyze()`：gap 排序、gap ≤ mean → hot、auto pick 從熱號隨機抽
-  - UI：multipage（左側自動 nav）；側欄全套滑桿 + 第二區「動態/手動」選擇 + pair-disjoint toggle
+  - UI：multipage（左側自動 nav）；側欄全套滑桿 + 第二區「動態/手動」選擇 + pair-disjoint toggle（v6.3 改為 batch-disjoint）
   - 測試：+35 個 unit tests（engine 10 / picker 13 / scraper 12）— 共 134 tests 全綠 (99 → 134)
   - 設計取捨：新建獨立模組而非泛型化既有 lotto649 — 避免影響 99 tests 與引入抽象稅；威力彩第二區邏輯特殊（1-8 池太小不切冷暖熱三層）
 
@@ -96,6 +96,14 @@ my-lottery-2026/
 ## 代碼淨化與收尾完成 (v6.2)
 - [x] **代碼淨化 (Auto-Cleanup, post v6.0/v6.1)**  ✅ 2026-06-02
   - 範圍：`tests/test_powerball_scraper.py`（移除 unused `import io`）
+
+## Phase 8 — 批次覆蓋模式 (v6.3)
+- [x] **批次推薦：注間號碼不重複（除膽碼外）**  ✅ 2026-06-20
+  - 動機：pair 不重複偏向結構分散；使用者需求為「各組號碼（除膽碼外）完全獨立」，目標是提升批次覆蓋率
+  - 設計：新增 `batch_disjoint` toggle；移除 UI 的「五注 pair 不重複」與「允許 pair 共享上限」控制
+  - 演算法：`_generate_batch_disjoint()` 以 `used_drag_numbers` 做全域互斥；膽碼可跨注重複，拖碼不可重複
+  - 涵蓋：`lotto_picker` + `powerball_picker` 兩套引擎一致支援；兩邊 UI 同步切換
+  - 測試：pair-disjoint 測試改為 batch-disjoint 測試，驗證「無膽碼時全注互斥」與「多膽碼時僅拖碼互斥」
   - 全範圍掃描結果（src/ + streamlit_app + scripts/ + tests/，21 個 .py 檔）：pyflakes 全清、無 commented-out dead code、無 print() debug 殘留（CLI `main()` 中 print 為合法輸出）、無 triple-blank lines、其他 import 全 in-use
   - 驗證：`pyflakes` 全清、`py_compile` 通過、targeted unittest 11/11 全綠；未動任何業務邏輯/變數命名/演算法結構
 
