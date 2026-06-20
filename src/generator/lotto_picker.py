@@ -118,14 +118,10 @@ def _generate_batch_disjoint(
     num_tickets: int,
     rng: random.Random,
 ) -> list[tuple[int, ...]]:
-    """Generate tickets with drag-number disjointness across the whole batch.
-
-    Keys may repeat across all tickets. Non-key drag numbers are globally
-    unique (no overlap) to maximize coverage.
-    """
+    """Generate tickets with full number disjointness across the whole batch."""
     results: list[tuple[int, ...]] = []
     seen: set[tuple[int, ...]] = set()
-    used_drag_numbers: set[int] = set()
+    used_numbers: set[int] = set()
 
     drag_candidates = pool - key_set
     needed = TICKET_SIZE - len(key_set)
@@ -137,7 +133,7 @@ def _generate_batch_disjoint(
         if len(results) >= num_tickets:
             break
         combo_set = set(combo)
-        if combo_set & used_drag_numbers:
+        if combo_set & used_numbers:
             continue
         ticket = tuple(sorted(key_set.union(combo)))
         if ticket in seen:
@@ -146,7 +142,7 @@ def _generate_batch_disjoint(
             continue
         results.append(ticket)
         seen.add(ticket)
-        used_drag_numbers |= combo_set
+        used_numbers |= combo_set
 
     return results
 
@@ -285,6 +281,9 @@ def generate_tickets(
 
     # --- Batch-disjoint branch ---
     if batch_disjoint:
+        # Strict batch mode: disable keys entirely so all 6 numbers are
+        # disjoint across tickets.
+        key_set = set()
         tickets = _generate_batch_disjoint(
             pool=pool,
             key_set=key_set,

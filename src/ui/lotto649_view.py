@@ -239,10 +239,10 @@ def render(sample_csv_path: Path) -> None:
         num_tickets = st.slider("注數", 1, 50, 5, key="l649_num")
 
         batch_disjoint = st.checkbox(
-            "🧩 批次推薦：注間號碼不重複（除膽碼外）",
+            "🧩 批次推薦：注間號碼完全不重複",
             value=False,
             help=(
-                "開啟後，各注的拖碼彼此完全不重合，只有膽碼可在多注重複，"
+                "開啟後，各注 6 顆號碼完全不重合（會停用膽碼），"
                 "可大幅提高批次覆蓋率。"
             ),
             key="l649_batch_disjoint",
@@ -362,6 +362,8 @@ def render(sample_csv_path: Path) -> None:
             return
 
     keys_arg = manual_keys
+    if batch_disjoint and (manual_keys or analysis.auto_keys):
+        st.info("🧩 批次不重複模式已停用膽碼，確保組與組之間 6 號完全不重複。")
     rng = random.Random(seed) if seed else None
     try:
         tickets, _ = generate_tickets(
@@ -472,7 +474,7 @@ def render(sample_csv_path: Path) -> None:
         st.success(f"✅ 已產出 {len(tickets)} 注合格組合（目標 {num_tickets} 注）")
 
     # --- Cost panel ---
-    keys_used = keys_arg if keys_arg else analysis.auto_keys
+    keys_used = [] if batch_disjoint else (keys_arg if keys_arg else analysis.auto_keys)
     tail_set_used = (
         set(manual_excluded_tails)
         if manual_excluded_tails is not None

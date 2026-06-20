@@ -245,9 +245,9 @@ def render(sample_csv_path: Path) -> None:
         )
 
         batch_disjoint = st.checkbox(
-            "🧩 批次推薦：注間號碼不重複（除膽碼外）",
+            "🧩 批次推薦：注間號碼完全不重複",
             value=False,
-            help="開啟後各注拖碼互不重疊，僅膽碼可重複，用於提高批次覆蓋率。",
+            help="開啟後各注 6 顆號碼完全不重疊（會停用膽碼），用於提高批次覆蓋率。",
             key="pb_batch_disjoint",
         )
 
@@ -385,6 +385,8 @@ def render(sample_csv_path: Path) -> None:
         return
 
     keys_arg = manual_keys
+    if batch_disjoint and (manual_keys or analysis.auto_keys):
+        st.info("🧩 批次不重複模式已停用膽碼，確保組與組之間 6 號完全不重複。")
 
     rng = random.Random(int(seed_input)) if seed_input else random.Random()
     try:
@@ -424,7 +426,7 @@ def render(sample_csv_path: Path) -> None:
         cols[4].metric("質", stats["prime_count"])
 
     if batch_disjoint:
-        st.caption("✅ 批次推薦模式：除膽碼外，各注號碼互不重複。")
+        st.caption("✅ 批次推薦模式：各注 6 顆號碼完全不重複。")
 
     st.caption(
         "提醒：本工具僅為數學優化器，無法改變獨立隨機事件之期望值；理性投注。"

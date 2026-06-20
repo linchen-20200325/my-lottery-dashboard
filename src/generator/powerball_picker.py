@@ -116,10 +116,10 @@ def _generate_batch_disjoint(
     num_tickets: int,
     rng: random.Random,
 ) -> list[tuple[int, ...]]:
-    """批次模式：除膽碼外，各注號碼完全互斥以提高覆蓋率。"""
+    """批次模式：各注 6 顆號碼完全互斥以提高覆蓋率。"""
     results: list[tuple[int, ...]] = []
     seen: set[tuple[int, ...]] = set()
-    used_drag_numbers: set[int] = set()
+    used_numbers: set[int] = set()
 
     drag_candidates = pool - key_set
     needed = TICKET_SIZE - len(key_set)
@@ -131,7 +131,7 @@ def _generate_batch_disjoint(
         if len(results) >= num_tickets:
             break
         combo_set = set(combo)
-        if combo_set & used_drag_numbers:
+        if combo_set & used_numbers:
             continue
         ticket = tuple(sorted(key_set.union(combo)))
         if ticket in seen:
@@ -140,7 +140,7 @@ def _generate_batch_disjoint(
             continue
         results.append(ticket)
         seen.add(ticket)
-        used_drag_numbers |= combo_set
+        used_numbers |= combo_set
 
     return results
 
@@ -270,6 +270,8 @@ def generate_tickets(
 
     # --- 批次覆蓋模式分支 ---
     if batch_disjoint:
+        # 嚴格批次模式：停用膽碼，確保 6 號全域互斥。
+        key_set = set()
         tickets = _generate_batch_disjoint(
             pool=pool,
             key_set=key_set,
