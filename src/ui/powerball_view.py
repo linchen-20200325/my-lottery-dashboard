@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import random
-from itertools import combinations as _combs_ui
 from pathlib import Path
 
 import streamlit as st
@@ -245,14 +244,11 @@ def render(sample_csv_path: Path) -> None:
             "隨機種子 (0 = 真隨機)", min_value=0, value=0, step=1, key="pb_seed",
         )
 
-        pair_disjoint = st.checkbox(
-            "🧩 注間 pair 不重複", value=False,
-            help="開啟後任兩注之間無 2 號 pair 重複；需 ≤ 1 顆膽碼。",
-            key="pb_pd",
-        )
-        pair_overlap_max = st.slider(
-            "允許 pair 共享上限", 0, 3, 0,
-            disabled=not pair_disjoint, key="pb_pomax",
+        batch_disjoint = st.checkbox(
+            "🧩 批次推薦：注間號碼不重複（除膽碼外）",
+            value=False,
+            help="開啟後各注拖碼互不重疊，僅膽碼可重複，用於提高批次覆蓋率。",
+            key="pb_batch_disjoint",
         )
 
         go = st.button(
@@ -388,19 +384,7 @@ def render(sample_csv_path: Path) -> None:
         st.warning("⚠️ 尚無歷史資料 — 請先載入 CSV 或等 cron 抓檔。")
         return
 
-    # --- pair-disjoint guard：auto-key trim ---
     keys_arg = manual_keys
-    if (pair_disjoint and manual_keys is None
-            and len(analysis.auto_keys) >= 2):
-        anchor = next(
-            (k for k in analysis.auto_keys if k in analysis.hot),
-            analysis.auto_keys[0],
-        )
-        keys_arg = [anchor]
-        st.info(
-            f"🔧 pair-disjoint 模式：自動雙膽 {analysis.auto_keys} → "
-            f"保留熱膽 `{anchor:02d}` 當錨點。"
-        )
 
     rng = random.Random(int(seed_input)) if seed_input else random.Random()
     try:
@@ -414,8 +398,7 @@ def render(sample_csv_path: Path) -> None:
             manual_sum_range=manual_sum_range,
             manual_bonus=manual_bonus,
             precomputed_analysis=analysis,
-            pair_disjoint=pair_disjoint,
-            pair_overlap_max=pair_overlap_max,
+            batch_disjoint=batch_disjoint,
             rng=rng,
         )
     except ValueError as exc:
@@ -440,21 +423,8 @@ def render(sample_csv_path: Path) -> None:
         cols[3].metric(f">{BIG_THRESHOLD}", stats["big_count"])
         cols[4].metric("質", stats["prime_count"])
 
-    # 注間共享 pair 診斷
-    if len(tickets) >= 2:
-        all_pairs: dict[frozenset[int], int] = {}
-        for t in tickets:
-            for p in _combs_ui(t, 2):
-                fp = frozenset(p)
-                all_pairs[fp] = all_pairs.get(fp, 0) + 1
-        shared = {p: c for p, c in all_pairs.items() if c >= 2}
-        if shared:
-            st.caption(
-                f"⚠️ 共享 pair {len(shared)} 組 "
-                f"(pair_disjoint={'on' if pair_disjoint else 'off'})"
-            )
-        else:
-            st.caption("✅ 注間 pair 完全不重複")
+    if batch_disjoint:
+        st.caption("✅ 批次推薦模式：除膽碼外，各注號碼互不重複。")
 
     st.caption(
         "提醒：本工具僅為數學優化器，無法改變獨立隨機事件之期望值；理性投注。"

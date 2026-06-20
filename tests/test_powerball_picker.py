@@ -143,32 +143,33 @@ class TestManualKeysAndExclusions(unittest.TestCase):
             self.assertNotIn(17, t)
 
 
-class TestPairDisjoint(unittest.TestCase):
+class TestBatchDisjoint(unittest.TestCase):
 
-    def test_pair_disjoint_no_shared_pair(self):
-        # pair_disjoint 限 ≤ 1 key（auto_keys 預設雙膽會撞約束，UI 端會 trim）
+    def test_batch_disjoint_no_keys(self):
         tickets, _, _ = generate_tickets(
             _synthetic_draws(), _synthetic_specials(),
-            num_tickets=3, manual_keys=[7],
-            pair_disjoint=True, pair_overlap_max=0,
-            rng=random.Random(3),
+            num_tickets=3, manual_keys=None,
+            batch_disjoint=True, rng=random.Random(3),
         )
-        # 嚴格 0-overlap：所有 pair 在所有 tickets 中唯一
-        seen_pairs: set[frozenset[int]] = set()
-        for t in tickets:
-            from itertools import combinations
-            for p in combinations(t, 2):
-                fp = frozenset(p)
-                self.assertNotIn(fp, seen_pairs)
-                seen_pairs.add(fp)
+        self.assertGreaterEqual(len(tickets), 2)
+        for i in range(len(tickets)):
+            for j in range(i + 1, len(tickets)):
+                self.assertFalse(set(tickets[i]) & set(tickets[j]))
 
-    def test_pair_disjoint_two_keys_raises(self):
-        with self.assertRaises(ValueError):
-            generate_tickets(
-                _synthetic_draws(), _synthetic_specials(),
-                num_tickets=3, manual_keys=[7, 17],
-                pair_disjoint=True, rng=random.Random(1),
-            )
+    def test_batch_disjoint_allows_two_keys(self):
+        tickets, _, _ = generate_tickets(
+            _synthetic_draws(), _synthetic_specials(),
+            num_tickets=3, manual_keys=[7, 17],
+            manual_sum_range=(80, 154),
+            batch_disjoint=True, rng=random.Random(11),
+        )
+        self.assertGreaterEqual(len(tickets), 1)
+        for t in tickets:
+            self.assertIn(7, t)
+            self.assertIn(17, t)
+        for i in range(len(tickets)):
+            for j in range(i + 1, len(tickets)):
+                self.assertFalse((set(tickets[i]) - {7, 17}) & (set(tickets[j]) - {7, 17}))
 
 
 if __name__ == "__main__":

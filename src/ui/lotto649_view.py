@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import random
-from itertools import combinations as _combs_ui
 from pathlib import Path
 
 import streamlit as st
@@ -239,23 +238,15 @@ def render(sample_csv_path: Path) -> None:
         st.markdown("#### ⚙️ 產出")
         num_tickets = st.slider("注數", 1, 50, 5, key="l649_num")
 
-        pair_disjoint = st.checkbox(
-            "🧩 五注 pair 不重複",
+        batch_disjoint = st.checkbox(
+            "🧩 批次推薦：注間號碼不重複（除膽碼外）",
             value=False,
             help=(
-                "開啟後，任兩注之間沒有任何 2 號 pair 重複。"
-                "需 ≤ 1 顆膽碼（2 顆以上膽碼會強制 pair 重複，與本模式互斥）。"
+                "開啟後，各注的拖碼彼此完全不重合，只有膽碼可在多注重複，"
+                "可大幅提高批次覆蓋率。"
             ),
-            key="l649_pd",
+            key="l649_batch_disjoint",
         )
-        if pair_disjoint:
-            pair_overlap_max = st.slider(
-                "允許 pair 共享上限",
-                min_value=0, max_value=3, value=0, step=1,
-                key="l649_pomax",
-            )
-        else:
-            pair_overlap_max = 0
 
         seed = st.number_input(
             "隨機種子（0 = 不固定）", min_value=0, max_value=10_000_000,
@@ -370,26 +361,7 @@ def render(sample_csv_path: Path) -> None:
             )
             return
 
-    if pair_disjoint and manual_keys and len(manual_keys) >= 2:
-        st.error(
-            f"pair-disjoint 模式下手動膽碼最多 1 顆（目前 {len(manual_keys)} 顆）— "
-            "請改成 0 或 1 顆膽碼，或關閉「五注 pair 不重複」。"
-        )
-        return
-
-    # pair-disjoint + 自動雙膽會強制 key-pair 重複 → 自動保留 1 顆熱膽碼錨點
-    pd_auto_key: list[int] | None = None
-    if pair_disjoint and not manual_keys:
-        _auto = [k for k in analysis.auto_keys if k not in manual_excluded_numbers]
-        if len(_auto) > 1:
-            _hot_set = set(analysis.hot)
-            pd_auto_key = [next((k for k in _auto if k in _hot_set), _auto[0])]
-            st.info(
-                f"🧩 pair-disjoint 模式：自動雙膽會強制 pair 重複，"
-                f"已自動保留 1 顆熱膽碼 {pd_auto_key[0]:02d}（其餘交由拖碼池選號）。"
-            )
-
-    keys_arg = manual_keys if manual_keys else pd_auto_key
+    keys_arg = manual_keys
     rng = random.Random(seed) if seed else None
     try:
         tickets, _ = generate_tickets(
@@ -400,8 +372,7 @@ def render(sample_csv_path: Path) -> None:
             manual_excluded_numbers=list(manual_excluded_numbers) if manual_excluded_numbers else None,
             manual_sum_range=manual_sum_range,
             precomputed_analysis=analysis,
-            pair_disjoint=pair_disjoint,
-            pair_overlap_max=pair_overlap_max,
+            batch_disjoint=batch_disjoint,
             rng=rng,
         )
     except ValueError as exc:
@@ -450,36 +421,26 @@ def render(sample_csv_path: Path) -> None:
             )
 
     if not tickets:
-        st.warning(
-            "通過五大濾網的組合為 0；Round 2 disjoint fallback 亦無解。"
-            "請放寬閾值或縮少手動限制再試。"
-        )
-        return
-
-    # --- pair-disjoint mode: report strict vs relaxed split ---
-    _skip_legacy_split = False
-    if pair_disjoint and len(tickets) >= 1:
-        _strict = 0
-        _relaxed = 0
-        _seen_pairs: set[frozenset[int]] = set()
-        for _t in tickets:
-            _ticket_pairs = {frozenset(p) for p in _combs_ui(_t, 2)}
-            if not (_ticket_pairs & _seen_pairs):
-                _strict += 1
-            else:
-                _relaxed += 1
-            _seen_pairs |= _ticket_pairs
-        if len(tickets) < num_tickets:
+        if batch_disjoint:
             st.warning(
-                f"🧩 pair-disjoint：已產出 **{len(tickets)} / {num_tickets}** 注"
-                f"（嚴格 {_strict} 注 ｜ 放寬 {_relaxed} 注）— "
-                f"若需更多注，調高「允許 pair 共享上限」(目前 {pair_overlap_max})。"
+                "批次不重複模式下可行組合為 0。請放寬閾值、減少手動限制或關閉此模式再試。"
             )
         else:
-            st.success(
-                f"🧩 pair-disjoint：已產出 {len(tickets)} 注"
-                f"（嚴格 {_strict} 注 ｜ 放寬 {_relaxed} 注）"
+            st.warning(
+                "通過五大濾網的組合為 0；Round 2 disjoint fallback 亦無解。"
+                "請放寬閾值或縮少手動限制再試。"
             )
+        return
+
+    _skip_legacy_split = False
+    if batch_disjoint:
+        if len(tickets) < num_tickets:
+            st.warning(
+                f"🧩 批次不重複模式：已產出 **{len(tickets)} / {num_tickets}** 注。"
+                "若需更多注，請放寬條件或減少注數。"
+            )
+        else:
+            st.success(f"🧩 批次不重複模式：已產出 {len(tickets)} 注")
         _skip_legacy_split = True
 
     # Detect Round 2 fallback tickets
