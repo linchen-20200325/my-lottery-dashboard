@@ -55,6 +55,13 @@ class TestAnalyzeBasics(unittest.TestCase):
         with self.assertRaises(ValueError):
             analyze([], [], rng=random.Random(1))
 
+    def test_single_row_raises(self):
+        # A2 (v6.9) — single-row history degenerates to zero variance;
+        # caller (UI) must fall back to STATIC_FALLBACK_ANALYSIS.
+        with self.assertRaises(ValueError) as ctx:
+            analyze([[1, 2, 3, 4, 5, 6]], [3], rng=random.Random(1))
+        self.assertIn(">= 2 rows", str(ctx.exception))
+
     def test_negative_sigma_raises(self):
         with self.assertRaises(ValueError):
             analyze(_synthetic_draws(), _synthetic_specials(),

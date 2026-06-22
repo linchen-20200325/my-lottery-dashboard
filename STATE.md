@@ -116,6 +116,15 @@ my-lottery-2026/
   - 新測試：`tests/test_review_findings.py` 14 個 cases — 3 個風險各帶 raise 路徑 + 兼容性正例
   - 驗證：144 unit tests 全綠（134 → 144，+10）；既有引擎/scraper/UI 零退化
 
+## 命名收歛 + 單列守門 + 版本鎖緊 (v6.9)
+- [x] **CLAUDE.md A1 + A2 + A4 同 PR 收斂**  ✅ 2026-06-22
+  - 觸發:盤點剩 3 條未結項目,三個都是「< 30 行、零行為動」邊際 fix,合一個 PR 結案
+  - **A1 (命名)**:`metrics.py:110` `dict["survival_rate"]` → `survival_ratio`(符合 §4.1 `_ratio` ∈ [0,1] 規則),同步改 `_format()` 顯示(`l194`)+ `tests/test_metrics.py`;module docstring 加 convention 註解;新加 `TestNamingConvention` 起 regression 守門
+  - **A2 (單列守門)**:兩 engine `analyze()` 在 `if not draws` 後加 `if len(draws) < 2: raise ValueError("need >= 2 rows ...")`,杜絕零變異退化成全冷/全熱;既有 `test_normal_analysis_not_fallback` 用 1 列改 2 列;新加 `test_single_row_rejected` / `test_two_rows_accepted` / `test_single_row_raises`
+  - **A4 (版本)**:`requirements.txt` `>=` → `~=`(`streamlit~=1.39.0` / `requests~=2.33.1` / `urllib3~=2.6.3`),鎖死 minor、允許 patch;附註解說明為何不用 `==`(此 sandbox 無 streamlit 可 freeze、Cloud 自選 patch 比直接 fallback 安全)
+  - **CLAUDE.md**:§4.1 移除「⚠️ 有歧義風險」、§4.6「單列 history」表行 ⚠️ → ✅、§5 可重現性段落更新版本字串
+  - 驗證:196 unit tests 全綠(191 → 196,+5)、pyflakes 0、`check_constitution` 7/7 PASS
+
 ## Logger 補強 + Fallback Derivation 註解 (v6.8)
 - [x] **CLAUDE.md A3 + A5 收斂**  ✅ 2026-06-22
   - 觸發:盤點未結項目時揪出最後兩條 CLAUDE.md ⚠️;一起做、零邏輯動

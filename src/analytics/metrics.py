@@ -10,6 +10,14 @@ Two diagnostic indicators per protocol §3:
     scraper CSV) that would still pass the filters. Near 1.0 means the
     filter does not "kill" historically valid winners (avoids overfitting).
 
+Naming convention (CLAUDE.md §4.1):
+  - Dict keys ending in `_ratio` are decimals in [0, 1].
+  - Dict keys ending in `_percent` are already ×100 (display-ready).
+  - Function names use operation-style `_rate` suffix; the returned
+    decimal lives under a `_ratio` key (e.g. `compression_rate()` returns
+    `{"compression_ratio": ...}`; `survival_rate()` returns
+    `{"survival_ratio": ...}`).
+
 NOT imported by streamlit_app.py — pure offline diagnostic.
 
 Usage:
@@ -107,7 +115,7 @@ def survival_rate(
     return {
         "draws_total": len(draws),
         "survived": survived,
-        "survival_rate": survived / len(draws),
+        "survival_ratio": survived / len(draws),
         "killed": len(draws) - survived,
     }
 
@@ -191,7 +199,7 @@ def _format(comp: dict, surv: dict | None) -> str:
             f"  Historical draws   : {surv['draws_total']:>12,}",
             f"  Survived filters   : {surv['survived']:>12,}",
             f"  Killed             : {surv['killed']:>12,}",
-            f"  Survival rate      : {surv['survival_rate']*100:>11.2f}%",
+            f"  Survival rate      : {surv['survival_ratio']*100:>11.2f}%",
             "  → 越高越好（不傷及真實開出組合，避免 overfitting）",
         ]
     return "\n".join(out)

@@ -200,11 +200,13 @@ if parse_csv_latest_date(history) < expected_latest_draw(now, {1, 4}):
 
 **幣別**:全程 `NT$`(`UNIT_PRICE_TWD` / `PRIZE_TWD` / `cost_twd` / `payout_twd` / `net_twd` 等變數名都帶 `_twd` 後綴)。
 
-**% vs 小數 — ⚠️ 有歧義風險(v6.3 review 點出)**:
-- `metrics.py:80` `dict["compression_ratio"]` 是**小數**(0.0-1.0)
-- `metrics.py:122` 顯示時 `*100` 標「%」
-- `backtest.py:99` `dict["roi_percent"]` 已 ×100,命名清楚
-- **規則**:變數名若以 `_ratio` 結尾必為小數;若以 `_percent` 結尾必為已 ×100 的數字。違反需 fix。
+**% vs 小數 — 規則(v6.9 已落地)**:
+- `metrics.py` `dict["compression_ratio"]` / `dict["survival_ratio"]` / `dict["estimated_ratio"]`:**小數** (0.0-1.0)
+- `backtest.py` `dict["roi_percent"]`:已 ×100 (display-ready)
+- 顯示層自行 `*100` 標「%」(`metrics._format()` / `backtest._format_report()`)
+- **規則(dict key 命名約束)**:`_ratio` 結尾必為小數 ∈ [0, 1];`_percent` 結尾必為已 ×100。
+- 違反 = bug — `tests/test_metrics.py::TestNamingConvention` 起 regression 守門。
+- 函數名(operation)用 `_rate` 後綴(如 `compression_rate()`),但**回傳值**透過 `_ratio` key 暴露 — `_rate` 不是值的後綴。
 
 **沒有**:年化 vs 期頻、實質 vs 名目、不同計價幣別等陷阱(樂透域單純,單幣別、單頻率)。
 
@@ -263,7 +265,7 @@ assert dates[0] >= dates[-1], "CSV must be newest-first"
 | 邊界 | 既有護網 | 狀態 |
 |---|---|---|
 | 空 history | `analyze()` raise (`history_engine.py:185`) | ✅ |
-| 單列 history | 無 explicit guard,靠 `min_std=1.0` 救身 | ⚠️ 退化為全冷/全熱風險(v6.3 review 點出,待補 guard) |
+| 單列 history | `analyze()` 在 `if not draws` 後加 `if len(draws) < 2: raise ValueError("need >= 2 rows ...")`,杜絕零變異退化(v6.9) | ✅ |
 | CSV 只有 header | `loader.from_csv_rows():52` raise | ✅ |
 | 全 fallback | `STATIC_FALLBACK_ANALYSIS` 接住,UI 顯示安全模式 + `is_fallback=True` | ✅ |
 | 五大濾網篩光所有候選 | 返回空 tickets,UI `st.warning` | ✅ |
@@ -281,7 +283,7 @@ assert dates[0] >= dates[-1], "CSV must be newest-first"
 ## §5. 流程層(Process)
 
 - **冪等性**:✅ scraper `download()` append-only by date,重抓無重複(`lotto649_downloader.py:283-322`);引擎以同 seed 必得同結果(`random.Random(seed)`)。
-- **可重現性**:`rng = random.Random(seed)` 模式(`lotto_picker.py:220`);`requirements.txt` 套件 pin 鬆綁(`streamlit>=1.39`、`requests>=2.31`、`urllib3>=2.0`)— ⚠️ 若需 100% 重現,應改為精確版本鎖。歷史運算用倉庫內 CSV 凍結快照(非即時 API)。
+- **可重現性**:`rng = random.Random(seed)` 模式(`lotto_picker.py:220`);`requirements.txt` 用 `~=` 相容版本鎖(`streamlit~=1.39.0`、`requests~=2.33.1`、`urllib3~=2.6.3`)鎖死 minor、允許 patch — v6.9 把舊 `>=` 收緊。若需 100% bit-for-bit 重現,改用 lockfile(pip-tools / uv);本專案視為過度約束未採用。歷史運算用倉庫內 CSV 凍結快照(非即時 API)。
 - **可觀測性**:Scraper `LOGGER.info` per-month 行數 + diagnostic `fetched_max vs existing_max` 對比(`lotto649_downloader.py:305-308`);workflow 失敗自動開 issue 帶 log tail 50 行(`update-history.yml:77-107`)。Streamlit `@st.cache_data(ttl=3600)` 包載入 + analyze。
 - **效能**:**明文禁 pandas 向量化**(舊 `CLAUDE.md §6 依賴限制`);`compression_rate()` 全 14M combos walk = ~30-60s 接受(僅離線 CLI 用,Streamlit 不呼叫)。Streamlit UI 路徑只有 O(N) 載入 + O(N) gap 計算 + O(C(drag, k)) shuffle,實測 < 1s。
 
