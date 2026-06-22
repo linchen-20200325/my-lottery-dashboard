@@ -16,6 +16,11 @@ import io
 import json
 from pathlib import Path
 
+from src.data.provenance import (
+    HistoryProvenance,
+    build_provenance_from_rows,
+)
+
 TICKET_SIZE = 6
 POOL_MIN, POOL_MAX = 1, 49
 
@@ -72,9 +77,8 @@ def load_csv_string(text: str) -> list[list[int]]:
 
 def load_csv_file_with_provenance(
     path: Path | str,
-) -> tuple[list[list[int]], "HistoryProvenance"]:
+) -> tuple[list[list[int]], HistoryProvenance]:
     """Like `load_csv_file` 但同時回傳 §2.2 血緣 metadata。"""
-    from src.data.provenance import build_provenance_from_rows
     p = Path(path)
     if not p.exists():
         raise HistoryLoadError(f"CSV file not found: {p}")
@@ -87,8 +91,7 @@ def load_csv_file_with_provenance(
 
 def load_csv_string_with_provenance(
     text: str, source: str = "<paste>",
-) -> tuple[list[list[int]], "HistoryProvenance"]:
-    from src.data.provenance import build_provenance_from_rows
+) -> tuple[list[list[int]], HistoryProvenance]:
     rows = list(csv.DictReader(io.StringIO(text)))
     draws = from_csv_rows(rows)
     prov = build_provenance_from_rows(rows, source=source, n_parsed=len(draws))

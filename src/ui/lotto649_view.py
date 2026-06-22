@@ -11,7 +11,6 @@ from src.analytics.cost_calc import UNIT_PRICE_TWD, summary as cost_summary
 from src.data.freshness import LOTTO649_DRAW_WEEKDAYS, check_freshness
 from src.data.loader import (
     HistoryLoadError,
-    load_auto,
     load_csv_file_with_provenance,
     load_csv_string_with_provenance,
     load_json_string,
@@ -19,7 +18,6 @@ from src.data.loader import (
 )
 from src.data.provenance import (
     HistoryProvenance,
-    build_provenance_from_rows,
     format_provenance_caption,
     now_utc,
 )
@@ -306,18 +304,18 @@ def render(sample_csv_path: Path) -> None:
             if not pasted.strip():
                 awaiting_input = True
             else:
-                # load_auto 走 CSV 或 JSON;為了 provenance 一致改走 CSV-with-prov
+                # CSV 或 JSON 各走自己的 provenance 路徑
                 stripped = pasted.lstrip()
                 if stripped.startswith(("[", "{")):
-                    from src.data.loader import load_json_string as _lj
-                    history = _lj(pasted)
+                    history = load_json_string(pasted)
                     provenance = HistoryProvenance(
                         source="<paste:json>", fetched_at=now_utc(),
                         n_rows=len(history), as_of=None, earliest=None,
                     )
                 else:
-                    from src.data.loader import load_csv_string_with_provenance as _lc
-                    history, provenance = _lc(pasted, source="<paste:csv>")
+                    history, provenance = load_csv_string_with_provenance(
+                        pasted, source="<paste:csv>",
+                    )
         else:
             history, provenance = _load_bundled(str(sample_csv_path))
     except (HistoryLoadError, OSError) as exc:

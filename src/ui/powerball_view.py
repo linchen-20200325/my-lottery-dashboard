@@ -11,7 +11,6 @@ from src.data.freshness import POWERBALL_DRAW_WEEKDAYS, check_freshness
 from src.data.loader_powerball import (
     PowerballLoadError,
     load_csv_file_with_provenance,
-    load_csv_string,
     load_csv_string_with_provenance,
     load_json_string,
     preview_recent,
