@@ -8,6 +8,8 @@ from pathlib import Path
 from src.analytics.metrics import (
     TOTAL_COMBINATIONS,
     compression_rate,
+    compression_rate_monte_carlo,
+    reconcile_compression,
     survival_rate,
 )
 
@@ -63,6 +65,53 @@ class TestSurvivalRate(unittest.TestCase):
                 survival_rate(p)
         finally:
             p.unlink()
+
+
+class TestMonteCarloReconcile(unittest.TestCase):
+    """憲法 §4.3 第二種算法對帳:exact ↔ Monte Carlo 在容差內一致。
+
+    複用 TestCompressionRate.setUpClass 快取的 exact 結果(~30-60s)避免重算。
+    Monte Carlo 50k 樣本 std error ≈ 0.0016(p=0.15),5% 容差很寬裕。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        # exact 全列舉約 30-60s,reuse 給多個測試避免重算
+        cls.exact = compression_rate()
+        cls.mc = compression_rate_monte_carlo(n_samples=50_000, seed=2026)
+
+    def test_monte_carlo_estimate_in_range(self):
+        # 抽樣估算應落在 [0, 1] 區間
+        self.assertGreaterEqual(self.mc["estimated_ratio"], 0.0)
+        self.assertLessEqual(self.mc["estimated_ratio"], 1.0)
+
+    def test_reconcile_passes_default_tolerance(self):
+        # 重用 cls.exact 避免再跑 30-60s 全列舉
+        result = reconcile_compression(
+            n_samples=50_000, seed=2026, exact_result=self.exact,
+        )
+        self.assertTrue(
+            result["passed"],
+            f"reconcile failed: exact={result['exact_ratio']:.6f}, "
+            f"mc={result['monte_carlo_ratio']:.6f}, "
+            f"rel_diff={result['rel_diff']:.4f}",
+        )
+
+    def test_zero_tolerance_fails(self):
+        # 容差設 0 → 抽樣絕不可能精確等於列舉值,必 FAIL
+        result = reconcile_compression(
+            n_samples=10_000, seed=42, rel_tol=0.0,
+            exact_result=self.exact,
+        )
+        self.assertFalse(result["passed"])
+
+    def test_estimate_close_to_exact(self):
+        # 直接比對:50k 樣本下 |exact - mc| 應 < 1%(實測通常 < 0.5%)
+        diff = abs(
+            float(self.exact["compression_ratio"])
+            - self.mc["estimated_ratio"]
+        )
+        self.assertLess(diff, 0.01)
 
 
 if __name__ == "__main__":

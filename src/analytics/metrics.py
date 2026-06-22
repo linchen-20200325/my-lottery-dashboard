@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import random
 from itertools import combinations
 from math import comb
 from pathlib import Path
@@ -111,6 +112,67 @@ def survival_rate(
     }
 
 
+def compression_rate_monte_carlo(
+    sum_lo: int = SUM_MIN,
+    sum_hi: int = SUM_MAX,
+    n_samples: int = 100_000,
+    seed: int = 2026,
+) -> dict[str, float | int]:
+    """憲法 §4.3 — 第二種算法對帳:抽樣估算 compression_rate。
+
+    從 [POOL_MIN, POOL_MAX] 隨機抽 `n_samples` 個 6-號組合,跑同一套濾網,
+    估算存活比例。`n=10^5` 時 std error ≈ sqrt(p(1-p)/n) ≈ 0.0011(p=0.15),
+    rel_tol 5% 內幾乎必收斂至真值。
+    """
+    rng = random.Random(seed)
+    pool = list(range(POOL_MIN, POOL_MAX + 1))
+    survived = 0
+    for _ in range(n_samples):
+        combo = tuple(sorted(rng.sample(pool, TICKET_SIZE)))
+        if _passes_static_filters(combo, sum_lo, sum_hi):
+            survived += 1
+    return {
+        "n_samples": n_samples,
+        "survived": survived,
+        "estimated_ratio": survived / n_samples,
+    }
+
+
+def reconcile_compression(
+    sum_lo: int = SUM_MIN,
+    sum_hi: int = SUM_MAX,
+    n_samples: int = 100_000,
+    seed: int = 2026,
+    rel_tol: float = 0.05,
+    exact_result: dict[str, float | int] | None = None,
+) -> dict[str, float | int | bool]:
+    """憲法 §4.3 — 對帳:exact 列舉 vs Monte Carlo 抽樣應一致(rel_diff ≤ rel_tol)。
+
+    抓 production bug:若 `_passes_static_filters` 邏輯被改錯或濾網參數
+    對不上,兩條路徑會發散、`passed=False`,呼叫端應視為 regression。
+
+    `exact_result`:可傳入已算好的 `compression_rate()` 結果避免重算
+    (full walk 約 30-60s)。
+    """
+    exact = exact_result if exact_result is not None else compression_rate(sum_lo, sum_hi)
+    mc = compression_rate_monte_carlo(sum_lo, sum_hi, n_samples, seed)
+    exact_ratio = float(exact["compression_ratio"])
+    mc_ratio = float(mc["estimated_ratio"])
+    rel_diff = (
+        abs(exact_ratio - mc_ratio) / exact_ratio
+        if exact_ratio > 0 else float("inf")
+    )
+    return {
+        "exact_ratio": exact_ratio,
+        "monte_carlo_ratio": mc_ratio,
+        "abs_diff": abs(exact_ratio - mc_ratio),
+        "rel_diff": rel_diff,
+        "rel_tol": rel_tol,
+        "n_samples": n_samples,
+        "passed": rel_diff <= rel_tol,
+    }
+
+
 def _format(comp: dict, surv: dict | None) -> str:
     out = [
         "=== v5.0 Filter Diagnostics ===",
@@ -143,6 +205,12 @@ def main() -> None:
     )
     ap.add_argument("--sum-lo", type=int, default=SUM_MIN)
     ap.add_argument("--sum-hi", type=int, default=SUM_MAX)
+    ap.add_argument(
+        "--reconcile", action="store_true",
+        help="Run Monte Carlo reconciliation (憲法 §4.3 第二種算法對帳)",
+    )
+    ap.add_argument("--mc-samples", type=int, default=100_000)
+    ap.add_argument("--mc-seed", type=int, default=2026)
     args = ap.parse_args()
 
     print("Computing compression rate (full C(49, 6) walk; ~14M combos)...")
@@ -156,6 +224,22 @@ def main() -> None:
             surv = survival_rate(args.csv, sum_lo=args.sum_lo, sum_hi=args.sum_hi)
 
     print(_format(comp, surv))
+
+    if args.reconcile:
+        print("")
+        print("[Monte Carlo Reconciliation]")
+        rec = reconcile_compression(
+            sum_lo=args.sum_lo, sum_hi=args.sum_hi,
+            n_samples=args.mc_samples, seed=args.mc_seed,
+        )
+        status = "✅ PASS" if rec["passed"] else "❌ FAIL"
+        print(f"  Exact ratio        : {rec['exact_ratio']*100:>11.4f}%")
+        print(f"  Monte Carlo ratio  : {rec['monte_carlo_ratio']*100:>11.4f}%")
+        print(f"  Absolute diff      : {rec['abs_diff']*100:>11.4f}%")
+        print(f"  Relative diff      : {rec['rel_diff']*100:>11.4f}%")
+        print(f"  Tolerance          : {rec['rel_tol']*100:>11.4f}%")
+        print(f"  Samples            : {rec['n_samples']:>12,}")
+        print(f"  Status             : {status}")
 
 
 if __name__ == "__main__":
