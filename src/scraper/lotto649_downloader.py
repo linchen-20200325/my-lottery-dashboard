@@ -58,6 +58,15 @@ DEFAULT_HEADERS = {
 REQUEST_TIMEOUT = 15  # seconds
 JSON_RETRY_ATTEMPTS = 3
 JSON_RETRY_BACKOFF = 2.0  # seconds, exponential
+# HTTP-layer retry (urllib3 adapter); semantically distinct from JSON_RETRY_* which
+# handles application-level decode errors. Keep separate even if values coincide.
+HTTP_RETRY_TOTAL = 3
+HTTP_RETRY_BACKOFF = 2.0
+# Per-month API request: 31 days = max possible draw count window per calendar month.
+API_PAGE_SIZE = 31
+# 大樂透每月最多 ~8 期（週 2 開獎 × 4-5 週）;buffer 2 個月容納跨月邊界。
+MAX_DRAWS_PER_MONTH = 8
+MONTHS_BUFFER = 2
 
 
 def _canon_date(s: str) -> str:
@@ -119,8 +128,8 @@ def _build_session() -> requests.Session:
     sess = requests.Session()
     sess.headers.update(DEFAULT_HEADERS)
     retry = Retry(
-        total=3,
-        backoff_factor=2.0,
+        total=HTTP_RETRY_TOTAL,
+        backoff_factor=HTTP_RETRY_BACKOFF,
         status_forcelist=[429, 500, 502, 503, 504],
         allowed_methods=["GET"],
         raise_on_status=False,
@@ -131,7 +140,7 @@ def _build_session() -> requests.Session:
 
 def _fetch_month_raw(sess: requests.Session, year: str, month: str) -> list[dict]:
     """Call API for one month; returns raw row list. Retries on JSON decode failures."""
-    url = f"{API_BASE}/Lotto649Result?period&month={year}-{month}&pageSize=31"
+    url = f"{API_BASE}/Lotto649Result?period&month={year}-{month}&pageSize={API_PAGE_SIZE}"
     last_err: Exception | None = None
     for attempt in range(JSON_RETRY_ATTEMPTS):
         resp = sess.get(url, timeout=REQUEST_TIMEOUT)
@@ -202,7 +211,11 @@ def fetch(periods: int = 500, session: requests.Session | None = None) -> list[D
     sess = session or _build_session()
     seen: set[str] = set()
     out: list[Draw] = []
-    months = (periods + 7) // 8 + 2  # ~8 draws/month max; pad
+    # ceil(periods / MAX_DRAWS_PER_MONTH) + MONTHS_BUFFER
+    months = (
+        (periods + MAX_DRAWS_PER_MONTH - 1) // MAX_DRAWS_PER_MONTH
+        + MONTHS_BUFFER
+    )
 
     for idx, (year, month) in enumerate(_months_back(months)):
         try:
@@ -326,6 +339,9 @@ def download(periods: int = 500, output: Path = DEFAULT_OUTPUT) -> int:
         existing_dates.add(canon)
         added += 1
     LOGGER.info("Added %d new draw(s) (existing kept: %d)", added, len(existing))
+    # §4.2 不變量:append-only — merged 不得少於 existing(永不覆蓋現有列)
+    assert len(merged) >= len(existing), \
+        f"append-only violated: merged={len(merged)} < existing={len(existing)}"
     return save_csv(merged.values(), output)
 
 

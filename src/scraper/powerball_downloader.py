@@ -45,6 +45,14 @@ DEFAULT_HEADERS = {
 REQUEST_TIMEOUT = 15
 JSON_RETRY_ATTEMPTS = 3
 JSON_RETRY_BACKOFF = 2.0
+# HTTP-layer retry(urllib3 adapter);與 JSON_RETRY_* 分離(語義不同)
+HTTP_RETRY_TOTAL = 3
+HTTP_RETRY_BACKOFF = 2.0
+# 單月 API window:31 天 = 行事曆月份最大可能開獎數窗口
+API_PAGE_SIZE = 31
+# 威力彩每月最多 ~8 期(週 2 開獎 × 4-5 週);buffer 2 個月容跨月邊界
+MAX_DRAWS_PER_MONTH = 8
+MONTHS_BUFFER = 2
 
 
 def _canon_date(s: str) -> str:
@@ -100,8 +108,8 @@ def _build_session() -> requests.Session:
     sess = requests.Session()
     sess.headers.update(DEFAULT_HEADERS)
     retry = Retry(
-        total=3,
-        backoff_factor=2.0,
+        total=HTTP_RETRY_TOTAL,
+        backoff_factor=HTTP_RETRY_BACKOFF,
         status_forcelist=[429, 500, 502, 503, 504],
         allowed_methods=["GET"],
         raise_on_status=False,
@@ -112,7 +120,7 @@ def _build_session() -> requests.Session:
 
 def _fetch_month_raw(sess: requests.Session, year: str, month: str) -> list[dict]:
     """單月 API 呼叫；JSON-decode 失敗自動 retry。"""
-    url = f"{API_BASE}/{API_PATH}?period&month={year}-{month}&pageSize=31"
+    url = f"{API_BASE}/{API_PATH}?period&month={year}-{month}&pageSize={API_PAGE_SIZE}"
     last_err: Exception | None = None
     for attempt in range(JSON_RETRY_ATTEMPTS):
         resp = sess.get(url, timeout=REQUEST_TIMEOUT)
@@ -183,7 +191,11 @@ def fetch(periods: int = 200, session: requests.Session | None = None) -> list[D
     sess = session or _build_session()
     seen: set[str] = set()
     out: list[Draw] = []
-    months = (periods + 7) // 8 + 2
+    # ceil(periods / MAX_DRAWS_PER_MONTH) + MONTHS_BUFFER
+    months = (
+        (periods + MAX_DRAWS_PER_MONTH - 1) // MAX_DRAWS_PER_MONTH
+        + MONTHS_BUFFER
+    )
 
     for idx, (year, month) in enumerate(_months_back(months)):
         try:
@@ -286,6 +298,9 @@ def download(periods: int = 200, output: Path = DEFAULT_OUTPUT) -> int:
         existing_dates.add(canon)
         added += 1
     LOGGER.info("Added %d new draw(s) (existing kept: %d)", added, len(existing))
+    # §4.2 不變量:append-only — merged 不得少於 existing(永不覆蓋現有列)
+    assert len(merged) >= len(existing), \
+        f"append-only violated: merged={len(merged)} < existing={len(existing)}"
     return save_csv(merged.values(), output)
 
 

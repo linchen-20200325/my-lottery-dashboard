@@ -164,6 +164,9 @@ def _dynamic_sum_range(
     sma = mean(sums) if sums else float((clamp_lo + clamp_hi) // 2)
     lo = max(clamp_lo, int(round(sma - pad)))
     hi = min(clamp_hi, int(round(sma + pad)))
+    # Invariant: SMA 落 [clamp_lo, clamp_hi] 外時 lo/hi 會反轉 → collapse 至最近 clamp 端點
+    if lo > hi:
+        lo = hi = clamp_hi if sma > clamp_hi else clamp_lo
     return sma, lo, hi
 
 
@@ -269,6 +272,17 @@ def analyze(
     # --- 第二區 ---
     specials_seq: Sequence[int] = specials if specials is not None else []
     bonus_gaps, bonus_hot, bonus_cold, bonus_pick = _bonus_analyze(specials_seq, rng)
+
+    # §4.2 不變量斷言（憲法 §6 自審清單第 10 條）
+    _main_pool = set(range(MAIN_POOL_MIN, MAIN_POOL_MAX + 1))
+    _bonus_pool = set(range(BONUS_POOL_MIN, BONUS_POOL_MAX + 1))
+    assert set(gaps.keys()) == _main_pool, "main gaps must cover [1,38]"
+    assert set(hot) | set(warm) | set(cold) == _main_pool, \
+        "main hot/warm/cold partition must cover [1,38]"
+    assert set(bonus_gaps.keys()) == _bonus_pool, "bonus gaps must cover [1,8]"
+    assert sum_lo <= sum_hi, f"sum range inverted: lo={sum_lo} > hi={sum_hi}"
+    assert BONUS_POOL_MIN <= bonus_pick <= BONUS_POOL_MAX, \
+        f"bonus_pick {bonus_pick} out of [1,8]"
 
     return PowerballAnalysis(
         hot=hot,

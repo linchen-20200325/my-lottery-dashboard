@@ -156,6 +156,11 @@ def _dynamic_sum_range(
     sma = mean(sums) if sums else float((clamp_lo + clamp_hi) // 2)
     lo = max(clamp_lo, int(round(sma - pad)))
     hi = min(clamp_hi, int(round(sma + pad)))
+    # Invariant: when SMA falls outside [clamp_lo, clamp_hi], lo/hi can invert
+    # (e.g. SMA=240, pad=30, clamp=[90,210] → lo=210, hi=210; or SMA=300 → lo=270, hi=210).
+    # Collapse to the nearest clamp endpoint so filters still admit a non-empty range.
+    if lo > hi:
+        lo = hi = clamp_hi if sma > clamp_hi else clamp_lo
     return sma, lo, hi
 
 
@@ -218,6 +223,14 @@ def analyze(
     exclude_tails = sorted(set(overheated) | set(dormant))
 
     auto_keys = _auto_keys(hot, cold, rng)
+
+    # §4.2 不變量斷言（憲法 §6 自審清單第 10 條）
+    _pool_set = set(range(POOL_MIN, POOL_MAX + 1))
+    assert set(gaps.keys()) == _pool_set, \
+        f"gaps must cover full pool, missing={_pool_set - set(gaps.keys())}"
+    assert set(hot) | set(warm) | set(cold) == _pool_set, \
+        "hot/warm/cold partition must cover full pool"
+    assert sum_lo <= sum_hi, f"sum range inverted: lo={sum_lo} > hi={sum_hi}"
 
     return HistoryAnalysis(
         hot=hot,

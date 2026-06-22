@@ -116,6 +116,22 @@ my-lottery-2026/
   - 新測試：`tests/test_review_findings.py` 14 個 cases — 3 個風險各帶 raise 路徑 + 兼容性正例
   - 驗證：144 unit tests 全綠（134 → 144，+10）；既有引擎/scraper/UI 零退化
 
+## 不變量斷言 + Magic Number 清理 (v6.4)
+- [x] **依新憲法 §4.2 / §3.3 補強**  ✅ 2026-06-22
+  - 觸發：新 CLAUDE.md 上線後，§6 自審清單揭露全專案僅 1 個 assert(`backtest.py:115`,type narrow)、scraper 有 4 處 inline magic number;先做最低風險的兩項
+  - **§4.2 不變量斷言**(6 處):
+    - `lotto_picker.generate_tickets` 兩個 return 點 — 每注 6 unique ints ∈ [1,49]
+    - `powerball_picker.generate_tickets` 兩個 return 點 — 同 + bonus_pick ∈ [1,8]
+    - `history_engine.analyze` — gaps 覆蓋全池 / hot∪warm∪cold == pool / sum_lo ≤ sum_hi
+    - `powerball_engine.analyze` — 同 + bonus pool 覆蓋 / bonus_pick 範圍
+    - `lotto649_downloader.download` / `powerball_downloader.download` — append-only(`len(merged) >= len(existing)`)
+  - **`_dynamic_sum_range` 防 lo>hi 反轉**:SMA 落 clamp 區間外時 collapse 至最近端點(原本會產出 lo>hi 害五濾網篩光)
+  - **§3.3 Magic Number 清理**(兩 scraper):
+    - `HTTP_RETRY_TOTAL` / `HTTP_RETRY_BACKOFF` 取代 `Retry(total=3, backoff_factor=2.0)` inline
+    - `API_PAGE_SIZE = 31` 取代 URL inline
+    - `MAX_DRAWS_PER_MONTH = 8` / `MONTHS_BUFFER = 2` 取代 `(periods + 7) // 8 + 2`
+  - 驗證:144 unit tests 全綠、零退化、零 .py 邏輯變化(僅加 assert + 抽常數)
+
 ## 後續規劃 (Phase 6 — Future Work)
 - [x] **修正『觸發 GitHub Actions 抓檔』按鈕 URL**  ✅ 2026-05-18（舊倉庫 `CornCorn-2015/my-lottery-2026` → 新倉庫 `LinChen-20200325/my-lottery-dashboard`，使用者點擊不再 404）
 - [x] **爬蟲自動更新歷史資料**  ✅ 2026-05-16（v3.3 + repo toggle 全鏈打通；CSV 519 期，最新 2026/5/15）

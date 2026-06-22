@@ -292,6 +292,13 @@ def generate_tickets(
             num_tickets=num_tickets,
             rng=rng,
         )
+        # §4.2 不變量斷言（與 main return 同規格）
+        for t in tickets:
+            assert (
+                len(t) == TICKET_SIZE
+                and len(set(t)) == TICKET_SIZE
+                and all(POOL_MIN <= n <= POOL_MAX for n in t)
+            ), f"ticket invariant violated (batch-disjoint): {t}"
         return tickets, analysis
 
     # Round 1: standard 5-filter cascade with ticket-level uniqueness.
@@ -346,6 +353,14 @@ def generate_tickets(
                     results.append(ticket)
                     seen.add(ticket)
                     used_numbers |= combo_set
+
+    # §4.2 不變量斷言：每注必為 6 顆唯一、值域 [POOL_MIN, POOL_MAX]
+    for t in results:
+        assert (
+            len(t) == TICKET_SIZE
+            and len(set(t)) == TICKET_SIZE
+            and all(POOL_MIN <= n <= POOL_MAX for n in t)
+        ), f"ticket invariant violated: {t}"
 
     return results, analysis
 
