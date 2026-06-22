@@ -116,6 +116,27 @@ my-lottery-2026/
   - 新測試：`tests/test_review_findings.py` 14 個 cases — 3 個風險各帶 raise 路徑 + 兼容性正例
   - 驗證：144 unit tests 全綠（134 → 144，+10）；既有引擎/scraper/UI 零退化
 
+## 憲法自動稽核 CI (v6.6)
+- [x] **CLAUDE.md §6 自審清單 → CI gate**  ✅ 2026-06-22
+  - 觸發:讓未來新功能自動 enforce 憲法,降低人工 review 成本
+  - **`scripts/check_constitution.py`** — 7 條規則的單檔 checker(stdlib-only):
+    1. `stdlib-only` — 禁 `import pandas/numpy` 於核心(generator/data/scraper/analytics)
+    2. `no-silent-except` — 禁 `except: pass`(單行 + 多行皆抓)
+    3. `no-pandas-imputation` — 禁 `.fillna/.ffill/.bfill`
+    4. `lookahead-protection` — backtest 必須有 `_assert_newest_first`
+    5. `canon-date-validates` — 兩 scraper 的 `_canon_date` 必須有 `date(y,m,d)` 驗證
+    6. `docs-exist` — `CLAUDE.md` / `STATE.md` / `ARCHITECTURE.md` 必存在
+    7. `invariant-asserts` — 6 個關鍵檔必含特定 sentinel(`hot/warm/cold`、`append-only`、`ticket invariant`)
+  - **`.github/workflows/constitution-check.yml`** — 三段 gate:
+    1. `python -m scripts.check_constitution`(規則檢查)
+    2. `pyflakes`(unused imports / dead code)
+    3. `python -m unittest discover tests`(含 Monte Carlo §4.3 對帳)
+  - **`tests/test_check_constitution.py`** — 9 cases:
+    - Snapshot:當前 codebase 對所有規則全綠
+    - 每條規則的「注入式違規」測試:確保檢查器真的會抓(不是假 pass)
+  - 驗證:173 unit tests 全綠(164 → 173,+9);`check_constitution.py` PASS 全 7 條
+  - 設計:新增規則只要在 `RULES` tuple 加 `(name, check_fn)`,擴充零摩擦
+
 ## Freshness UI + Monte Carlo 對帳 (v6.5)
 - [x] **依新憲法 §2.4 / §4.3 補強**  ✅ 2026-06-22
   - 觸發:新 CLAUDE.md 揭露兩項缺口 — UI 無 freshness 檢查 / 三大指標皆缺第二種算法對帳
