@@ -1,0 +1,40 @@
+name: Constitution Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pyflakes
+
+      - name: Constitution rules (scripts/check_constitution.py)
+        run: python -m scripts.check_constitution
+
+      - name: pyflakes (unused imports / dead code)
+        run: pyflakes src/ streamlit_app.py scripts/ tests/
+
+      - name: Unit tests (incl. Monte Carlo §4.3 reconcile)
+        # 不變量 + freshness + 對帳 + lookahead protection 全跑一遍。
+        # compression_rate 全列舉約 30-60s — runner 上可接受。
+        run: python -m unittest discover tests
