@@ -238,6 +238,11 @@ def load_existing(path: Path) -> dict[str, Draw]:
                 )
             except (KeyError, ValueError):
                 continue
+            if draw.draw_term in merged:
+                LOGGER.warning(
+                    "duplicate draw_term=%s in CSV — last row wins (data integrity issue?)",
+                    draw.draw_term,
+                )
             merged[draw.draw_term] = draw
     return merged
 

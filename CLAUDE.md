@@ -182,7 +182,7 @@ if parse_csv_latest_date(history) < expected_latest_draw(now, {1, 4}):
 - `API_PAGE_SIZE = 31` 取代 URL inline
 - `MAX_DRAWS_PER_MONTH = 8` / `MONTHS_BUFFER = 2` 取代 `(periods + 7) // 8 + 2`
 
-**剩餘缺口**:`history_engine.py:75` / `powerball_engine.py:75` fallback `cold_threshold=15.0` 仍無 derivation 註解(若視為 STATIC_FALLBACK_ANALYSIS 的「無歷史時保守值」可接受,但需加註解說明)。
+**已落地**(v6.8):兩 engine 的 `STATIC_FALLBACK_ANALYSIS` 上方加 derivation block,說明 `hot_threshold=2.0`(= `DEFAULTS["hot_threshold_floor"]`)與 `cold_threshold=15.0`(= 每號約 8 期出一次 × `μ + 1.5σ` 保守估算)的來源。
 
 ### 3.4 統計異常偵測
 
@@ -268,7 +268,7 @@ assert dates[0] >= dates[-1], "CSV must be newest-first"
 | 全 fallback | `STATIC_FALLBACK_ANALYSIS` 接住,UI 顯示安全模式 + `is_fallback=True` | ✅ |
 | 五大濾網篩光所有候選 | 返回空 tickets,UI `st.warning` | ✅ |
 | 當期 cron API 失敗 | idx=0 強制 raise(`lotto649_downloader.py:206-211`) | ✅ |
-| 重複 draw_term | `_gaps()` 用 `setdefault` 自然忽略 | ⚠️ 無警告,應加 LOGGER.warning |
+| 重複 draw_term | 兩 scraper `load_existing()` v6.8 加 LOGGER.warning + last-write-wins | ✅ v6.8 |
 | CSV 中文編碼破壞日期 | `_canon_date` 回 `""`(v6.3.1 後) | ✅ |
 | 威力彩 `special` 超界(歷史) | `_bonus_analyze` raise(v6.3.1) | ✅ |
 | pair-disjoint 用 ≥ 2 膽 | picker raise (`lotto_picker.py:319-324`) | ✅ |
