@@ -62,7 +62,7 @@ class DataPoint:
     as_of: date            # 資料歸屬日期(≠ 抓取日,極重要)
 ```
 
-⚠️ **既有缺口**:`history_engine.HistoryAnalysis` / `PowerballAnalysis` dataclass 沒有 `fetched_at` 欄位 — 純信號 dataclass(`history_engine.py:49-67`)。如未來需嚴格 provenance,應在 `src/data/loader.py` 加薄包裝層,**不**將 `fetched_at` 灌進引擎 dataclass(避免破壞 stdlib-only 純度)。
+**包裝層已就位**(v6.7):`src/data/provenance.py` 的 `HistoryProvenance` dataclass 持有 `source / fetched_at / as_of / earliest / n_rows`;loader 提供 `load_*_with_provenance()` additive 變體(`loader.py:74-103`、`loader_powerball.py:65-92`)。引擎 dataclass(`HistoryAnalysis` / `PowerballAnalysis`)**故意維持純信號狀態**,不灌 provenance — 避免污染 stdlib-only 測試 fixture 與引擎 cache key。
 
 ### 2.3 Point-in-Time — 防 Lookahead / 用「當時可得」的資料
 

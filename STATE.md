@@ -116,6 +116,16 @@ my-lottery-2026/
   - 新測試：`tests/test_review_findings.py` 14 個 cases — 3 個風險各帶 raise 路徑 + 兼容性正例
   - 驗證：144 unit tests 全綠（134 → 144，+10）；既有引擎/scraper/UI 零退化
 
+## Provenance 包裝層 (v6.7)
+- [x] **CLAUDE.md §2.2 既有缺口收斂**  ✅ 2026-06-22
+  - 觸發:憲法 §2.2 明文留缺口「引擎 dataclass 沒有 fetched_at;如未來需嚴格 provenance,應在 loader 加薄包裝層」— 本輪補
+  - **`src/data/provenance.py`** — `HistoryProvenance(source, fetched_at, n_rows, as_of, earliest)` frozen dataclass + `extract_dates()` + `build_provenance_from_rows()` + `format_provenance_caption()`(UI helper),純 stdlib
+  - **`src/data/loader.py` + `loader_powerball.py`** — 加 additive 變體 `load_csv_file_with_provenance` / `load_csv_string_with_provenance`(回傳 `(draws, [specials,] HistoryProvenance)` tuple),既有 API 完全不動、零 breakage
+  - **UI 兩 view** — `_load_bundled` / `_load_upload` 改用 provenance 版本,主面板加 `format_provenance_caption()` 第二行 caption(顯示 `📦 N 期 · 最新 YYYY-MM-DD · 最舊 YYYY-MM-DD · 來源 ... · 載入 HH:MM UTC`)
+  - **設計取捨**:`HistoryProvenance` **不灌進** `HistoryAnalysis` / `PowerballAnalysis`(維持 stdlib-only 純度 + 不污染測試 fixture);`as_of` 取 CSV 內最新 `draw_date`(業務歸屬日)而非 wall-clock
+  - 新測試:`tests/test_provenance.py` 15 cases(dataclass frozen / now_utc tz-aware / extract_dates 邊界 / build_provenance / 兩 loader provenance / caption 格式 / 來源截斷)
+  - 驗證:188/188 unit tests 全綠(173 → 188,+15)、`check_constitution` 7/7 PASS
+
 ## 憲法自動稽核 CI (v6.6)
 - [x] **CLAUDE.md §6 自審清單 → CI gate**  ✅ 2026-06-22
   - 觸發:讓未來新功能自動 enforce 憲法,降低人工 review 成本

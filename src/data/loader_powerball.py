@@ -76,6 +76,34 @@ def load_csv_string(text: str) -> tuple[list[list[int]], list[int]]:
     return from_csv_rows(rows)
 
 
+# --- §2.2 Provenance-annotated variants (additive; existing API unchanged) ---
+
+
+def load_csv_file_with_provenance(
+    path: Path | str,
+) -> tuple[list[list[int]], list[int], "HistoryProvenance"]:
+    """Like `load_csv_file` 但同時回傳 §2.2 血緣 metadata(三元組)。"""
+    from src.data.provenance import build_provenance_from_rows
+    p = Path(path)
+    if not p.exists():
+        raise PowerballLoadError(f"CSV file not found: {p}")
+    with p.open("r", encoding="utf-8", newline="") as fp:
+        rows = list(csv.DictReader(fp))
+    draws, specials = from_csv_rows(rows)
+    prov = build_provenance_from_rows(rows, source=str(p), n_parsed=len(draws))
+    return draws, specials, prov
+
+
+def load_csv_string_with_provenance(
+    text: str, source: str = "<paste>",
+) -> tuple[list[list[int]], list[int], "HistoryProvenance"]:
+    from src.data.provenance import build_provenance_from_rows
+    rows = list(csv.DictReader(io.StringIO(text)))
+    draws, specials = from_csv_rows(rows)
+    prov = build_provenance_from_rows(rows, source=source, n_parsed=len(draws))
+    return draws, specials, prov
+
+
 def load_json_string(text: str) -> tuple[list[list[int]], list[int]]:
     """JSON 格式：`[{"draw": [..6..], "special": int, "term": "...", "date": "..."}, ...]`"""
     try:

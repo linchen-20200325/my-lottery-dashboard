@@ -10,10 +10,16 @@ import streamlit as st
 from src.data.freshness import POWERBALL_DRAW_WEEKDAYS, check_freshness
 from src.data.loader_powerball import (
     PowerballLoadError,
-    load_csv_file,
+    load_csv_file_with_provenance,
     load_csv_string,
+    load_csv_string_with_provenance,
     load_json_string,
     preview_recent,
+)
+from src.data.provenance import (
+    HistoryProvenance,
+    format_provenance_caption,
+    now_utc,
 )
 from src.generator.powerball_engine import (
     BONUS_POOL_MAX,
@@ -43,8 +49,10 @@ from src.generator.powerball_picker import (
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def _load_bundled(path_str: str) -> tuple[list[list[int]], list[int]]:
-    return load_csv_file(Path(path_str))
+def _load_bundled(
+    path_str: str,
+) -> tuple[list[list[int]], list[int], HistoryProvenance]:
+    return load_csv_file_with_provenance(Path(path_str))
 
 
 @st.cache_data(ttl=600, show_spinner=False)
@@ -54,11 +62,19 @@ def _freshness_warning(path_str: str) -> str | None:
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def _load_upload(payload: bytes, name: str) -> tuple[list[list[int]], list[int]]:
+def _load_upload(
+    payload: bytes, name: str,
+) -> tuple[list[list[int]], list[int], HistoryProvenance]:
     text = payload.decode("utf-8", errors="replace")
+    source = f"<upload:{name}>"
     if name.lower().endswith(".json"):
-        return load_json_string(text)
-    return load_csv_string(text)
+        draws, specials = load_json_string(text)
+        prov = HistoryProvenance(
+            source=source, fetched_at=now_utc(), n_rows=len(draws),
+            as_of=None, earliest=None,
+        )
+        return draws, specials, prov
+    return load_csv_string_with_provenance(text, source=source)
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -278,31 +294,40 @@ def render(sample_csv_path: Path) -> None:
 
     history: list[list[int]] = []
     specials: list[int] = []
+    provenance: HistoryProvenance | None = None
     load_error: str | None = None
     preview_rows: list[dict] = []
 
     try:
         if source == "倉庫內附 (data/powerball.csv)":
-            history, specials = _load_bundled(str(sample_csv_path))
+            history, specials, provenance = _load_bundled(str(sample_csv_path))
             preview_rows = _preview_bundled(str(sample_csv_path), preview_limit)
         elif source == "上傳 CSV / JSON" and uploaded_file is not None:
             payload = uploaded_file.getvalue()
-            history, specials = _load_upload(payload, uploaded_file.name)
+            history, specials, provenance = _load_upload(payload, uploaded_file.name)
             preview_rows = _preview_upload(payload, uploaded_file.name, preview_limit)
         elif source == "貼上文字" and pasted.strip():
             if pasted.lstrip().startswith(("[", "{")):
                 history, specials = load_json_string(pasted)
+                provenance = HistoryProvenance(
+                    source="<paste:json>", fetched_at=now_utc(),
+                    n_rows=len(history), as_of=None, earliest=None,
+                )
             else:
-                history, specials = load_csv_string(pasted)
+                history, specials, provenance = load_csv_string_with_provenance(
+                    pasted, source="<paste:csv>",
+                )
             preview_rows = _preview_text(pasted, preview_limit)
         else:
-            load_error = "等待資料輸入：請選擇來源並上傳/貼上 CSV/JSON，或等 cron 自動抓檔。"
+            load_error = "等待資料輸入:請選擇來源並上傳/貼上 CSV/JSON,或等 cron 自動抓檔。"
     except PowerballLoadError as exc:
-        load_error = f"資料解析失敗：{exc}"
+        load_error = f"資料解析失敗:{exc}"
     except Exception as exc:  # noqa: BLE001
-        load_error = f"未預期錯誤：{exc}"
+        load_error = f"未預期錯誤:{exc}"
 
     st.caption(f"📊 已載入 **{len(history)}** 期威力彩歷史資料")
+    if provenance is not None:
+        st.caption(format_provenance_caption(provenance))
 
     # §2.4 Freshness check — 只在用倉庫內附 CSV 時檢查
     if source == "倉庫內附 (data/powerball.csv)":
