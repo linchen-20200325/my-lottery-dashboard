@@ -11,11 +11,15 @@ from src.analytics.cost_calc import UNIT_PRICE_TWD, summary as cost_summary
 from src.data.freshness import LOTTO649_DRAW_WEEKDAYS, check_freshness
 from src.data.loader import (
     HistoryLoadError,
-    load_auto,
-    load_csv_file,
-    load_csv_string,
+    load_csv_file_with_provenance,
+    load_csv_string_with_provenance,
     load_json_string,
     preview_recent,
+)
+from src.data.provenance import (
+    HistoryProvenance,
+    format_provenance_caption,
+    now_utc,
 )
 from src.generator.history_engine import (
     DEFAULTS,
@@ -43,8 +47,8 @@ from src.generator.lotto_picker import (
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def _load_bundled(path_str: str) -> list[list[int]]:
-    return load_csv_file(Path(path_str))
+def _load_bundled(path_str: str) -> tuple[list[list[int]], HistoryProvenance]:
+    return load_csv_file_with_provenance(Path(path_str))
 
 
 @st.cache_data(ttl=600, show_spinner=False)
@@ -54,11 +58,18 @@ def _freshness_warning(path_str: str) -> str | None:
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def _load_upload(payload: bytes, name: str) -> list[list[int]]:
+def _load_upload(payload: bytes, name: str) -> tuple[list[list[int]], HistoryProvenance]:
     text = payload.decode("utf-8", errors="replace")
+    source = f"<upload:{name}>"
     if name.lower().endswith(".json"):
-        return load_json_string(text)
-    return load_csv_string(text)
+        # JSON 路徑不帶 draw_date,provenance.as_of 為 None
+        draws = load_json_string(text)
+        prov = HistoryProvenance(
+            source=source, fetched_at=now_utc(), n_rows=len(draws),
+            as_of=None, earliest=None,
+        )
+        return draws, prov
+    return load_csv_string_with_provenance(text, source=source)
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -279,30 +290,46 @@ def render(sample_csv_path: Path) -> None:
 
     fallback_reason: str | None = None
     history: list[list[int]] = []
+    provenance: HistoryProvenance | None = None
     awaiting_input = False
     try:
         if source == "上傳 CSV / JSON":
             if uploaded_file is None:
                 awaiting_input = True
             else:
-                history = _load_upload(uploaded_file.getvalue(), uploaded_file.name)
+                history, provenance = _load_upload(
+                    uploaded_file.getvalue(), uploaded_file.name,
+                )
         elif source == "貼上文字":
             if not pasted.strip():
                 awaiting_input = True
             else:
-                history = load_auto(pasted)
+                # CSV 或 JSON 各走自己的 provenance 路徑
+                stripped = pasted.lstrip()
+                if stripped.startswith(("[", "{")):
+                    history = load_json_string(pasted)
+                    provenance = HistoryProvenance(
+                        source="<paste:json>", fetched_at=now_utc(),
+                        n_rows=len(history), as_of=None, earliest=None,
+                    )
+                else:
+                    history, provenance = load_csv_string_with_provenance(
+                        pasted, source="<paste:csv>",
+                    )
         else:
-            history = _load_bundled(str(sample_csv_path))
+            history, provenance = _load_bundled(str(sample_csv_path))
     except (HistoryLoadError, OSError) as exc:
-        fallback_reason = f"歷史載入失敗：{exc}"
+        fallback_reason = f"歷史載入失敗:{exc}"
 
     if fallback_reason:
         st.warning(
-            f"⚠️ **降級至靜態安全模式**：{fallback_reason}。"
+            f"⚠️ **降級至靜態安全模式**:{fallback_reason}。"
             f"已套用預設區間 {SUM_MIN}-{SUM_MAX}、無冷熱訊號。"
         )
 
     st.caption(f"📊 已載入 **{len(history)}** 期歷史資料")
+    if provenance is not None:
+        st.caption(format_provenance_caption(provenance))
 
     # §2.4 Freshness check — 只在用倉庫內附 CSV 時檢查（上傳/貼上由使用者負責）
     if source == "倉庫內附 (data/lotto649.csv)":

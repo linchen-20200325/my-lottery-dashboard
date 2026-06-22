@@ -160,7 +160,7 @@ def check_docs_exist() -> list[Violation]:
         if not (ROOT / doc).exists():
             out.append(Violation(
                 "docs-exist", doc, 0, "",
-                f"required doc missing (CLAUDE.md §8.1)",
+                "required doc missing (CLAUDE.md §8.1)",
             ))
     return out
 
