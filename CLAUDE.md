@@ -111,7 +111,7 @@ if parse_csv_latest_date(history) < expected_latest_draw(now, {1, 4}):
     st.warning("⚠️ CSV 已落後 — 觸發 GitHub Actions 抓檔或上傳最新 CSV")
 ```
 
-⚠️ **既有缺口**:UI 目前**沒有 freshness 檢查**,只顯示「已載入 N 期」(`lotto649_view.py`、`powerball_view.py`)。應補一條 `_check_freshness()` warning。
+**已落地**(v6.5):`src/data/freshness.py` 實作上述邏輯;兩 UI view 各自加 `_freshness_warning()` cached helper(`ttl=600`),倉庫 CSV 過期顯示 `st.warning("⏰ 資料可能過期...")`。僅檢查 #2 倉庫內附 CSV,#3 上傳/#4 貼上路徑由使用者負責。
 
 ---
 
@@ -177,11 +177,12 @@ if parse_csv_latest_date(history) < expected_latest_draw(now, {1, 4}):
 | `JSON_RETRY_ATTEMPTS = 3` / `JSON_RETRY_BACKOFF = 2.0` | API 容錯 | `lotto649_downloader.py:59-60` |
 | `REQUEST_TIMEOUT = 15` 秒 | API 容錯 | `lotto649_downloader.py:58` |
 
-⚠️ **既有 magic number 缺口**(v6.3 review 已點出,待修):
-- `lotto649_downloader.py:115-119` `Retry(total=3, backoff_factor=2.0)` 內聯,與上方命名常數雙寫
-- `lotto649_downloader.py:127` `pageSize=31` URL 內聯
-- `lotto649_downloader.py:198` `(periods + 7) // 8 + 2` magic 7/8/2
-- `history_engine.py:75` / `powerball_engine.py:75` fallback `cold_threshold=15.0` 無 derivation
+**已落地**(v6.4)— 兩 scraper 同步抽出:
+- `HTTP_RETRY_TOTAL` / `HTTP_RETRY_BACKOFF`(語義獨立於 JSON_RETRY_*)取代 inline `Retry(total=3, backoff_factor=2.0)`
+- `API_PAGE_SIZE = 31` 取代 URL inline
+- `MAX_DRAWS_PER_MONTH = 8` / `MONTHS_BUFFER = 2` 取代 `(periods + 7) // 8 + 2`
+
+**剩餘缺口**:`history_engine.py:75` / `powerball_engine.py:75` fallback `cold_threshold=15.0` 仍無 derivation 註解(若視為 STATIC_FALLBACK_ANALYSIS 的「無歷史時保守值」可接受,但需加註解說明)。
 
 ### 3.4 統計異常偵測
 
@@ -217,17 +218,18 @@ assert all(1 <= n <= 49 for n in ticket) and len(set(ticket)) == 6
 assert dates[0] >= dates[-1], "CSV must be newest-first"
 ```
 
-**本領域必有的不變量**(目前缺口:全專案僅 1 處 `assert` 在 `backtest.py:115`,屬 type narrow 而非業務不變量):
+**本領域必有的不變量**(v6.4 後已全數落地,8 處 `assert` 散在引擎與 scraper):
 
-| 不變量 | 應在哪裡 assert | 現狀 |
+| 不變量 | 在哪 assert | 現狀 |
 |---|---|---|
-| `all(1 ≤ n ≤ POOL_MAX and len(set(t))==6 for t in tickets)` | `generate_tickets` 返回前 | ⚠️ 缺 |
-| `set(gaps.keys()) == set(range(POOL_MIN, POOL_MAX+1))` | `_gaps()` 返回前 | ⚠️ 缺 |
-| `set(hot) ∪ set(warm) ∪ set(cold) == 全 pool` | `analyze()` 返回前 | ⚠️ 缺 |
-| `sum_min_dynamic ≤ sum_max_dynamic` | `analyze()` 返回前 | ⚠️ 缺 |
-| `len(merged) >= len(existing)` (append-only 保證) | `download()` 返回前 | ⚠️ 缺 |
-| CSV newest-first 順序 | `backtest._read_csv` | ✅ v6.3.1 已加 |
-| `history_specials` 全 ∈ [1, 8] | `_bonus_analyze` | ✅ v6.3.1 已加 |
+| `all(1 ≤ n ≤ POOL_MAX and len(set(t))==6 for t in tickets)` | `lotto_picker / powerball_picker` 兩個 return 點 | ✅ v6.4 |
+| `set(gaps.keys()) == set(range(POOL_MIN, POOL_MAX+1))` | `analyze()` 返回前 | ✅ v6.4 |
+| `set(hot) ∪ set(warm) ∪ set(cold) == 全 pool` | `analyze()` 返回前 | ✅ v6.4 |
+| `sum_min_dynamic ≤ sum_max_dynamic` | `analyze()` 返回前(配合 `_dynamic_sum_range` lo>hi collapse 修復) | ✅ v6.4 |
+| `len(merged) >= len(existing)` (append-only 保證) | 兩 scraper `download()` 返回前 | ✅ v6.4 |
+| CSV newest-first 順序 | `backtest._read_csv` | ✅ v6.3.1 |
+| `history_specials` 全 ∈ [1, 8] | `_bonus_analyze` | ✅ v6.3.1 |
+| `bonus_pick ∈ [1, 8]` | `powerball_picker / powerball_engine` 返回前 | ✅ v6.4 |
 
 ### 4.3 重算對帳(Reconciliation)
 
@@ -300,7 +302,7 @@ assert dates[0] >= dates[-1], "CSV must be newest-first"
 □ 無 lookahead:CSV newest-first + backtest._assert_newest_first 不可繞過
 □ 開獎日校準:大樂透(二/五) / 威力彩(一/四) / cron 4 槽容錯
 □ 浮點比較用 math.isclose,非 ==
-□ 關鍵指標(compression / survival / roi)有第二種算法對帳 [⚠️ 目前缺,未來加 Monte Carlo]
+□ 關鍵指標(compression / survival / roi)有第二種算法對帳 [v6.5:`compression_rate_monte_carlo` + `reconcile_compression(rel_tol=0.05)`,CLI `--reconcile`]
 □ 不變量斷言(每注 6 unique ∈ pool / hot∪warm∪cold = pool / sum_lo ≤ sum_hi / append-only)
 □ stdlib-only(src.generator.*);無 pandas / numpy 偷渡;周邊例外只有 streamlit / requests / math
 ```
