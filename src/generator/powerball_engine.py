@@ -170,11 +170,22 @@ def _dynamic_sum_range(
 def _bonus_analyze(
     specials: Sequence[int], rng: random.Random
 ) -> tuple[dict[int, int], list[int], list[int], int]:
-    """第二區 1-8 池：gap 排序 + 取低 gap 為 hot、高為 cold、auto pick = 熱號隨機。"""
+    """第二區 1-8 池：gap 排序 + 取低 gap 為 hot、高為 cold、auto pick = 熱號隨機。
+
+    Raises ValueError on any special outside [BONUS_POOL_MIN, BONUS_POOL_MAX]
+    (v6.3 — was silently skipped before, which corrupted gap-index alignment).
+    """
     n_draws = len(specials)
     gaps: dict[int, int] = {n: n_draws for n in range(BONUS_POOL_MIN, BONUS_POOL_MAX + 1)}
     for i, s in enumerate(specials):
-        if BONUS_POOL_MIN <= s <= BONUS_POOL_MAX and gaps[s] == n_draws:
+        if isinstance(s, bool) or not isinstance(s, int):
+            raise ValueError(f"specials[{i}] must be int (got {s!r})")
+        if not (BONUS_POOL_MIN <= s <= BONUS_POOL_MAX):
+            raise ValueError(
+                f"specials[{i}]={s} out of range "
+                f"[{BONUS_POOL_MIN}, {BONUS_POOL_MAX}]"
+            )
+        if gaps[s] == n_draws:
             gaps[s] = i
     if not specials:
         # 全 fallback：hot = 全 8 顆、auto pick = 1
