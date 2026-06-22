@@ -281,6 +281,15 @@ def generate_tickets(
             rng=rng,
         )
         bonus_pick = _resolve_bonus(manual_bonus, analysis)
+        # §4.2 不變量斷言（與 main return 同規格）
+        for t in tickets:
+            assert (
+                len(t) == TICKET_SIZE
+                and len(set(t)) == TICKET_SIZE
+                and all(MAIN_POOL_MIN <= n <= MAIN_POOL_MAX for n in t)
+            ), f"ticket invariant violated (batch-disjoint): {t}"
+        assert BONUS_POOL_MIN <= bonus_pick <= BONUS_POOL_MAX, \
+            f"bonus_pick {bonus_pick} out of [1,8]"
         return tickets, bonus_pick, analysis
 
     # Round 1: 標準五濾網 + 去重
@@ -330,6 +339,17 @@ def generate_tickets(
                     used_numbers |= combo_set
 
     bonus_pick = _resolve_bonus(manual_bonus, analysis)
+
+    # §4.2 不變量斷言：每注必為 6 顆唯一、第一區 [1,38]、第二區 [1,8]
+    for t in results:
+        assert (
+            len(t) == TICKET_SIZE
+            and len(set(t)) == TICKET_SIZE
+            and all(MAIN_POOL_MIN <= n <= MAIN_POOL_MAX for n in t)
+        ), f"ticket invariant violated: {t}"
+    assert BONUS_POOL_MIN <= bonus_pick <= BONUS_POOL_MAX, \
+        f"bonus_pick {bonus_pick} out of [1,8]"
+
     return results, bonus_pick, analysis
 
 
