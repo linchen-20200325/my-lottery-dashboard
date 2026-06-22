@@ -283,7 +283,7 @@ assert dates[0] >= dates[-1], "CSV must be newest-first"
 ## §5. 流程層(Process)
 
 - **冪等性**:✅ scraper `download()` append-only by date,重抓無重複(`lotto649_downloader.py:283-322`);引擎以同 seed 必得同結果(`random.Random(seed)`)。
-- **可重現性**:`rng = random.Random(seed)` 模式(`lotto_picker.py:220`);`requirements.txt` 用 `~=` 相容版本鎖(`streamlit~=1.39.0`、`requests~=2.33.1`、`urllib3~=2.6.3`)鎖死 minor、允許 patch — v6.9 把舊 `>=` 收緊。若需 100% bit-for-bit 重現,改用 lockfile(pip-tools / uv);本專案視為過度約束未採用。歷史運算用倉庫內 CSV 凍結快照(非即時 API)。
+- **可重現性**:`rng = random.Random(seed)` 模式(`lotto_picker.py:220`);`requirements.txt` 用 `>=` 寬鬆 pin(`streamlit>=1.39`、`requests>=2.31`、`urllib3>=2.0`)— v6.9 曾改 `~=` 收緊但 v6.10.1 hotfix revert(`~=1.39.0` 對撞 Streamlit Cloud runtime 預載新版的 transitive 相依鏈)。若未來要再 pin,先在 Cloud 同款 Python 環境跑 `pip install --dry-run` 驗證 transitive 無衝突。歷史運算用倉庫內 CSV 凍結快照(非即時 API)。
 - **可觀測性**:Scraper `LOGGER.info` per-month 行數 + diagnostic `fetched_max vs existing_max` 對比(`lotto649_downloader.py:305-308`);workflow 失敗自動開 issue 帶 log tail 50 行(`update-history.yml:77-107`)。Streamlit `@st.cache_data(ttl=3600)` 包載入 + analyze。
 - **效能**:**明文禁 pandas 向量化**(舊 `CLAUDE.md §6 依賴限制`);`compression_rate()` 全 14M combos walk = ~30-60s 接受(僅離線 CLI 用,Streamlit 不呼叫)。Streamlit UI 路徑只有 O(N) 載入 + O(N) gap 計算 + O(C(drag, k)) shuffle,實測 < 1s。
 

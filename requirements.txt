@@ -1,12 +1,12 @@
-# v6.9 (CLAUDE.md §5 可重現性):`~=` 相容版本鎖 — 鎖死 minor、允許 patch。
-# 用 `~=` 而非 `==` 因為:
-#   1. 此 sandbox 無 streamlit 可 `pip freeze`,無法驗證 Cloud 實裝 patch 版;
-#   2. `~=1.39.0` 等價 `>=1.39.0,<1.40` — 比舊 `>=1.39` 緊很多、又允許 Cloud
-#      自選同 minor 的安全 patch(避免 Cloud 重建時抓不到 pin 版本而 fallback)。
-# 如要 100% bit-for-bit 重現,改用 lockfile(pip-tools / uv)而非直接 `==`。
-streamlit~=1.39.0
+# v6.10.1 hotfix:revert v6.9 A4 `~=` 鎖,回到 v6.8 的 `>=` 寬鬆 pin。
+# 原因:Streamlit Cloud 安裝失敗(Error installing requirements)— `~=1.39.0`
+# 強鎖 streamlit minor 對撞 Cloud runtime 已預載新版的 transitive 相依鏈。
+# 教訓:沒有在 Streamlit Cloud 同款 Python 環境驗證過的版本鎖、不該推。
+# 若未來要再嘗試 pin,先在 Cloud 同款 Python(3.10/3.11)用 `pip install --dry-run`
+# 跑過完整 resolver、確認 transitive 無衝突再說。
+streamlit>=1.39
 # Below are offline-only deps for src/scraper (NOT imported by streamlit_app.py).
 # The live app reads `data/lotto649.csv` committed to the repo, or accepts
 # manual upload via the UI; it never makes outbound API calls.
-requests~=2.33.1
-urllib3~=2.6.3
+requests>=2.31
+urllib3>=2.0

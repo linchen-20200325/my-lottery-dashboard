@@ -116,6 +116,13 @@ my-lottery-2026/
   - 新測試：`tests/test_review_findings.py` 14 個 cases — 3 個風險各帶 raise 路徑 + 兼容性正例
   - 驗證：144 unit tests 全綠（134 → 144，+10）；既有引擎/scraper/UI 零退化
 
+## Hotfix:revert v6.9 A4 版本鎖 (v6.10.1)
+- [x] **Streamlit Cloud 安裝失敗緊急 revert**  ✅ 2026-06-22
+  - 觸發:使用者回報 Streamlit Cloud 顯示 `Error installing requirements.`
+  - 根因:v6.9 把 `requirements.txt` `>=` 改 `~=`(`streamlit~=1.39.0` / `requests~=2.33.1` / `urllib3~=2.6.3`)— 三個版本 PyPI 上都存在,但 `~=1.39.0` 強鎖 streamlit minor 對撞 Cloud runtime 預載的較新版 transitive 相依鏈(tornado / altair / protobuf),resolver 解不開
+  - 修復:revert 回 v6.8 三條 `>=` 寬鬆 pin(已穩跑 3 週),走 §8.5 白名單第 2 條「版本字串 bump」直推 main
+  - 教訓:沒有在 Streamlit Cloud 同款 Python 環境驗證過的 transitive 相依、不該直接 pin;CLAUDE.md §5「可重現性」段同步更新警告
+
 ## 尾數訊號 default 放寬 + UI 訊息修正 (v6.10)
 - [x] **使用者回報「尾數號碼帶不出任何數值」根因修復**  ✅ 2026-06-22
   - 根因:`overheat_min_count=4`(3 期需單尾出 4 次 = 22% 集中,實測 577/568 期都觸發不到)+ `dormant_periods=10`(60 slots 幾乎必覆蓋所有 10 個尾數,P ≈ 0.18%)→ DEFAULT 對真實資料太嚴
