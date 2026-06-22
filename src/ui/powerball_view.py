@@ -394,10 +394,19 @@ def render(sample_csv_path: Path) -> None:
             f"**和值動態區間**：`{analysis.sum_min_dynamic} - {analysis.sum_max_dynamic}`"
             f"（SMA={analysis.sum_sma:.1f}）"
         )
-        st.markdown(
-            "**排除尾數**：" +
-            (" ".join(f"`{t}`" for t in analysis.exclude_tails) or "—")
-        )
+        # v6.10: 三項全空時改 explicit 訊息避免「—」被誤判為 bug
+        if analysis.exclude_tails:
+            st.markdown(
+                "**排除尾數**：" +
+                " ".join(f"`{t}`" for t in analysis.exclude_tails)
+            )
+            st.caption(
+                f"過熱:{analysis.overheated_tails or '—'} · "
+                f"死寂:{analysis.dormant_tails or '—'}"
+            )
+        else:
+            st.markdown("**排除尾數**:✓ 無")
+            st.caption("尾數分佈接近均勻、無極端訊號(可在側欄調低判定門檻)")
         st.markdown(
             "**自動雙膽**：" +
             (" ".join(f"`{n:02d}`" for n in analysis.auto_keys) or "—")
