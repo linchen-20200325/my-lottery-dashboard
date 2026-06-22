@@ -7,6 +7,7 @@ from pathlib import Path
 
 import streamlit as st
 
+from src.data.freshness import POWERBALL_DRAW_WEEKDAYS, check_freshness
 from src.data.loader_powerball import (
     PowerballLoadError,
     load_csv_file,
@@ -44,6 +45,12 @@ from src.generator.powerball_picker import (
 @st.cache_data(ttl=3600, show_spinner=False)
 def _load_bundled(path_str: str) -> tuple[list[list[int]], list[int]]:
     return load_csv_file(Path(path_str))
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _freshness_warning(path_str: str) -> str | None:
+    """憲法 §2.4:返回 stale 警告字串或 None;cache 10 分鐘避免每 rerun 重讀。"""
+    return check_freshness(Path(path_str), POWERBALL_DRAW_WEEKDAYS)
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -296,6 +303,12 @@ def render(sample_csv_path: Path) -> None:
         load_error = f"未預期錯誤：{exc}"
 
     st.caption(f"📊 已載入 **{len(history)}** 期威力彩歷史資料")
+
+    # §2.4 Freshness check — 只在用倉庫內附 CSV 時檢查
+    if source == "倉庫內附 (data/powerball.csv)":
+        stale_msg = _freshness_warning(str(sample_csv_path))
+        if stale_msg:
+            st.warning(f"⏰ **資料可能過期** — {stale_msg}")
 
     # --- 預覽 ---
     if preview_rows:

@@ -116,6 +116,22 @@ my-lottery-2026/
   - 新測試：`tests/test_review_findings.py` 14 個 cases — 3 個風險各帶 raise 路徑 + 兼容性正例
   - 驗證：144 unit tests 全綠（134 → 144，+10）；既有引擎/scraper/UI 零退化
 
+## Freshness UI + Monte Carlo 對帳 (v6.5)
+- [x] **依新憲法 §2.4 / §4.3 補強**  ✅ 2026-06-22
+  - 觸發:新 CLAUDE.md 揭露兩項缺口 — UI 無 freshness 檢查 / 三大指標皆缺第二種算法對帳
+  - **§2.4 Freshness UI 檢查**:
+    - 新增 `src/data/freshness.py`:`expected_latest_draw()` + `latest_csv_date()` + `check_freshness()`,純 stdlib + 可注入 `now` 供測試
+    - 規則:大樂透週二/五、威力彩週一/四,各自當日 22:00 GMT+8 截止
+    - 兩 UI view 加 `_freshness_warning()` 快取(`ttl=600`),倉庫 CSV 過期 → `st.warning("⏰ 資料可能過期...")`
+    - 上傳 / 貼上路徑不檢查(由使用者負責)
+  - **§4.3 Monte Carlo 對帳**:
+    - `compression_rate_monte_carlo(n_samples, seed)`:隨機抽 N 個 combo 估算濾網存活比
+    - `reconcile_compression()`:exact 全列舉 vs Monte Carlo 抽樣,rel_diff > tol 視為 regression
+    - CLI 加 `--reconcile` flag 帶 PASS/FAIL 對帳報告
+    - reconcile 接 `exact_result` 注入避免測試重複跑 30-60s 全列舉
+  - 新測試:`tests/test_freshness.py` 16 cases(weekday boundary、22:00 截止、空 CSV、髒日期);`tests/test_metrics.py` +4 cases(MC range、reconcile pass/zero-tol fail、|exact-mc| < 1%)
+  - 驗證:164 unit tests 全綠(144 → 164,+20),既有引擎/scraper/UI 零退化
+
 ## 不變量斷言 + Magic Number 清理 (v6.4)
 - [x] **依新憲法 §4.2 / §3.3 補強**  ✅ 2026-06-22
   - 觸發：新 CLAUDE.md 上線後，§6 自審清單揭露全專案僅 1 個 assert(`backtest.py:115`,type narrow)、scraper 有 4 處 inline magic number;先做最低風險的兩項
