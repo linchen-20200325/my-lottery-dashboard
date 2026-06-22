@@ -107,6 +107,15 @@ my-lottery-2026/
   - 全範圍掃描結果（src/ + streamlit_app + scripts/ + tests/，21 個 .py 檔）：pyflakes 全清、無 commented-out dead code、無 print() debug 殘留（CLI `main()` 中 print 為合法輸出）、無 triple-blank lines、其他 import 全 in-use
   - 驗證：`pyflakes` 全清、`py_compile` 通過、targeted unittest 11/11 全綠；未動任何業務邏輯/變數命名/演算法結構
 
+## Code Review 三大風險修復 (v6.3.1)
+- [x] **TDD 紅燈 → 修復 → 綠燈**  ✅ 2026-06-12
+  - 觸發：使用者要求 code reviewer 角色逐項打勾；review 揭露 3 個 production 風險、全寫成測試
+  - 修復 1：`_canon_date()`（兩 scraper）加 `datetime.date(y,m,d)` 驗證，拒絕 2026/02/30、2026/13/05、非閏年 2/29 → 回傳 `""` 讓 dedup 自動忽略（vs 原本 zero-pad 通過、佔據 dedup key 害真實日期被擋）；純文字解析失敗仍回原值保留診斷
+  - 修復 2：`powerball_engine._bonus_analyze()` 對歷史 specials 超界值改 `raise ValueError`（含 type/range 兩道閘）—— 原本沉默跳過會讓 gap-index 對齊腐蝕，髒 CSV 進入引擎前就被擋下
+  - 修復 3：`analytics.backtest` 新增 `_assert_newest_first()`，CSV 若 oldest-first 直接 raise；避免靜默 lookahead 洩漏（rows[0] 必須是最新一期，否則 `history = rows[k+1:k+1+lookback]` 反而是「未來」推「過去」）
+  - 新測試：`tests/test_review_findings.py` 14 個 cases — 3 個風險各帶 raise 路徑 + 兼容性正例
+  - 驗證：144 unit tests 全綠（134 → 144，+10）；既有引擎/scraper/UI 零退化
+
 ## 後續規劃 (Phase 6 — Future Work)
 - [x] **修正『觸發 GitHub Actions 抓檔』按鈕 URL**  ✅ 2026-05-18（舊倉庫 `CornCorn-2015/my-lottery-2026` → 新倉庫 `LinChen-20200325/my-lottery-dashboard`，使用者點擊不再 404）
 - [x] **爬蟲自動更新歷史資料**  ✅ 2026-05-16（v3.3 + repo toggle 全鏈打通；CSV 519 期，最新 2026/5/15）

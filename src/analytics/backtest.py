@@ -37,8 +37,10 @@ PRIZE_TWD: dict[int, int] = {
 }
 
 
-def _read_csv(path: Path) -> list[list[int]]:
-    out: list[list[int]] = []
+def _read_csv(path: Path) -> tuple[list[list[int]], list[str]]:
+    """Load (nums, dates) preserving CSV order. Caller must verify newest-first."""
+    out_nums: list[list[int]] = []
+    out_dates: list[str] = []
     with path.open(newline="", encoding="utf-8") as fp:
         reader = csv.DictReader(fp)
         for row in reader:
@@ -47,8 +49,28 @@ def _read_csv(path: Path) -> list[list[int]]:
             except (KeyError, ValueError):
                 continue
             if len(nums) == TICKET_SIZE:
-                out.append(nums)
-    return out
+                out_nums.append(nums)
+                out_dates.append(row.get("draw_date", ""))
+    return out_nums, out_dates
+
+
+def _assert_newest_first(dates: list[str]) -> None:
+    """v6.3 — Guard against silent lookahead.
+
+    Backtest semantics require `rows[0]` to be the latest draw so that
+    `history = rows[k+1 : k+1+lookback]` is strictly older than `target = rows[k]`.
+    If CSV is oldest-first, the loop predicts the past using future draws —
+    silent data corruption with no exception.
+    """
+    nonempty = [d for d in dates if d]
+    if len(nonempty) < 2:
+        return  # not enough signal to check
+    if nonempty[0] < nonempty[-1]:
+        raise ValueError(
+            "CSV must be sorted newest-first (rows[0] = latest draw); "
+            f"got rows[0]={nonempty[0]!r} < rows[-1]={nonempty[-1]!r}. "
+            "Re-export via src.scraper.lotto649_downloader (auto newest-first)."
+        )
 
 
 def backtest(
@@ -57,7 +79,8 @@ def backtest(
     lookback: int = 30,
     seed: int = 2026,
 ) -> dict[str, object]:
-    rows = _read_csv(csv_path)
+    rows, dates = _read_csv(csv_path)
+    _assert_newest_first(dates)
     if len(rows) < lookback + 2:
         raise ValueError(
             f"need >= {lookback + 2} draws in CSV, got {len(rows)}"

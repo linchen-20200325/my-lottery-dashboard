@@ -48,7 +48,11 @@ JSON_RETRY_BACKOFF = 2.0
 
 
 def _canon_date(s: str) -> str:
-    """Normalize to `YYYY/MM/DD` (zero-padded). Returns input unchanged if unparseable."""
+    """Normalize to `YYYY/MM/DD` (zero-padded).
+
+    Returns "" for structurally parseable but impossible dates (2/30,
+    13/05 etc.); returns input unchanged if numerical parsing fails.
+    """
     if not s:
         return ""
     head = s[:10].replace("-", "/")
@@ -56,9 +60,13 @@ def _canon_date(s: str) -> str:
     if len(parts) >= 3:
         try:
             y, m, d = int(parts[0]), int(parts[1]), int(parts[2])
-            return f"{y:04d}/{m:02d}/{d:02d}"
         except ValueError:
             return s
+        try:
+            date(y, m, d)
+        except ValueError:
+            return ""
+        return f"{y:04d}/{m:02d}/{d:02d}"
     return s
 
 
