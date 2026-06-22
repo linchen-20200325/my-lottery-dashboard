@@ -260,6 +260,14 @@ def load_existing(path: Path) -> dict[str, Draw]:
                 )
             except (KeyError, ValueError):
                 continue
+            if draw.draw_term in merged:
+                # CLAUDE.md §4.6:重複 draw_term 過去沉默 overwrite。
+                # 警告但保留 last-write-wins 行為避免破壞既有 CSV(append-only 是
+                # download() 端的合約,load 端只負責讀)。
+                LOGGER.warning(
+                    "duplicate draw_term=%s in CSV — last row wins (data integrity issue?)",
+                    draw.draw_term,
+                )
             merged[draw.draw_term] = draw
     return merged
 

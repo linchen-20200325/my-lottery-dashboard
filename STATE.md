@@ -116,6 +116,14 @@ my-lottery-2026/
   - 新測試：`tests/test_review_findings.py` 14 個 cases — 3 個風險各帶 raise 路徑 + 兼容性正例
   - 驗證：144 unit tests 全綠（134 → 144，+10）；既有引擎/scraper/UI 零退化
 
+## Logger 補強 + Fallback Derivation 註解 (v6.8)
+- [x] **CLAUDE.md A3 + A5 收斂**  ✅ 2026-06-22
+  - 觸發:盤點未結項目時揪出最後兩條 CLAUDE.md ⚠️;一起做、零邏輯動
+  - **A3**:兩 scraper `load_existing()` 偵測 CSV 內重複 `draw_term` → `LOGGER.warning("duplicate draw_term=... last row wins")`,保留 last-write-wins 行為避免破壞既有 CSV
+  - **A5**:`history_engine.py` + `powerball_engine.py` 的 `STATIC_FALLBACK_ANALYSIS` 上方加 derivation block,說明 `hot_threshold=2.0`(= `DEFAULTS["hot_threshold_floor"]`,動態↔fallback 切換 hot 定義恆定)與 `cold_threshold=15.0`(= 每號平均 6-8 期出一次 × `μ+1.5σ` 保守估算)的來源
+  - 新測試:`tests/test_loader_dup_warning.py` 3 cases(雙樂透 dup → warning + 無 dup → 無 warning)
+  - 驗證:191 unit tests 全綠(188 → 191,+3)、`check_constitution` 7/7 PASS、CLAUDE.md A3/A5 警語移除
+
 ## Provenance 包裝層 (v6.7)
 - [x] **CLAUDE.md §2.2 既有缺口收斂**  ✅ 2026-06-22
   - 觸發:憲法 §2.2 明文留缺口「引擎 dataclass 沒有 fetched_at;如未來需嚴格 provenance,應在 loader 加薄包裝層」— 本輪補

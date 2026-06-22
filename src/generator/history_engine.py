@@ -67,7 +67,15 @@ class HistoryAnalysis:
     is_fallback: bool = False      # True iff produced by graceful degradation
 
 
-# Fallback singleton — used by Phase 2 when load/analyze raises
+# Fallback singleton — used by Phase 2 when load/analyze raises.
+#
+# Threshold derivation(對應 CLAUDE.md §3.3 反捏造規則 — 解釋為何是這兩個數):
+#   - `hot_threshold=2.0`     = `DEFAULTS["hot_threshold_floor"]`,動態路徑也用同一個 floor,
+#                                fallback 直接套常數讓 fallback↔ 動態切換時 hot 定義不會跳動。
+#   - `cold_threshold=15.0`   = 「樂透 6/49 每號平均約 8 期出一次,15 期沒出 ≈ μ + 1.5σ
+#                                的保守估算」— 對應動態路徑 `μ + cold_sigma_factor * σ` 在
+#                                典型樣本下的觀測值;fallback 沒有真歷史時取此常數當 placeholder。
+# 兩值都僅在 `is_fallback=True` 時生效,UI 端會 `st.caption("⚠️ 靜態 Fallback")` 提示。
 STATIC_FALLBACK_ANALYSIS = HistoryAnalysis(
     hot=[], warm=list(range(POOL_MIN, POOL_MAX + 1)), cold=[],
     gaps={n: 0 for n in range(POOL_MIN, POOL_MAX + 1)},

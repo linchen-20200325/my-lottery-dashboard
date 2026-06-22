@@ -73,6 +73,11 @@ class PowerballAnalysis:
     is_fallback: bool = False
 
 
+# Fallback derivation(對應 CLAUDE.md §3.3 反捏造)— 與大樂透 STATIC_FALLBACK_ANALYSIS 同邏輯:
+#   - `hot_threshold=2.0`   = `DEFAULTS["hot_threshold_floor"]`,動態↔fallback 切換時 hot 定義恆定
+#   - `cold_threshold=15.0` = 威力彩 6/38 每號平均約 6.3 期出一次,15 期沒出 ≈ μ + 1.5σ 保守估算
+#                              (vs 大樂透 6/49 的 8 期/次;pool 小所以 cold 門檻其實偏緊,但 fallback
+#                               主要靠 sum_min/max + warm 全池就能選出可玩 ticket,cold 是次要訊號)
 STATIC_FALLBACK_ANALYSIS = PowerballAnalysis(
     hot=[], warm=list(range(MAIN_POOL_MIN, MAIN_POOL_MAX + 1)), cold=[],
     gaps={n: 0 for n in range(MAIN_POOL_MIN, MAIN_POOL_MAX + 1)},
