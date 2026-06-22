@@ -197,6 +197,13 @@ def analyze(
     """
     if not draws:
         raise ValueError("history_draws must not be empty")
+    if len(draws) < 2:
+        raise ValueError(
+            f"history_draws must have >= 2 rows for meaningful Z-score "
+            f"(got {len(draws)}; single-row history degenerates to "
+            f"all-hot/all-cold with zero variance — UI must fall back to "
+            f"STATIC_FALLBACK_ANALYSIS)"
+        )
     if hot_sigma_factor < 0 or cold_sigma_factor < 0:
         raise ValueError("sigma factors must be >= 0")
     if sum_clamp_lo >= sum_clamp_hi:

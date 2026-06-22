@@ -51,8 +51,8 @@ class TestSurvivalRate(unittest.TestCase):
             r = survival_rate(p)
             self.assertEqual(r["draws_total"], 2)
             self.assertEqual(r["survived"] + r["killed"], r["draws_total"])
-            self.assertGreaterEqual(r["survival_rate"], 0)
-            self.assertLessEqual(r["survival_rate"], 1)
+            self.assertGreaterEqual(r["survival_ratio"], 0)
+            self.assertLessEqual(r["survival_ratio"], 1)
         finally:
             p.unlink()
 
@@ -112,6 +112,40 @@ class TestMonteCarloReconcile(unittest.TestCase):
             - self.mc["estimated_ratio"]
         )
         self.assertLess(diff, 0.01)
+
+
+class TestNamingConvention(unittest.TestCase):
+    """A1 (v6.9) — CLAUDE.md §4.1: `_ratio` ∈ [0,1], `_percent` already ×100."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.comp = compression_rate()
+
+    def test_compression_ratio_is_decimal(self):
+        self.assertIn("compression_ratio", self.comp)
+        self.assertGreaterEqual(self.comp["compression_ratio"], 0.0)
+        self.assertLessEqual(self.comp["compression_ratio"], 1.0)
+
+    def test_old_survival_rate_key_removed(self):
+        rows = [{"n1": 5, "n2": 12, "n3": 18, "n4": 25, "n5": 33, "n6": 42}]
+        with tempfile.NamedTemporaryFile(
+            "w", suffix=".csv", delete=False, newline=""
+        ) as f:
+            w = csv.DictWriter(
+                f, fieldnames=["n1", "n2", "n3", "n4", "n5", "n6"]
+            )
+            w.writeheader()
+            w.writerows(rows)
+            p = Path(f.name)
+        try:
+            r = survival_rate(p)
+            # Convention: dict key must be `_ratio` (0..1), not legacy `_rate`.
+            self.assertIn("survival_ratio", r)
+            self.assertNotIn("survival_rate", r)
+            self.assertGreaterEqual(r["survival_ratio"], 0.0)
+            self.assertLessEqual(r["survival_ratio"], 1.0)
+        finally:
+            p.unlink()
 
 
 if __name__ == "__main__":

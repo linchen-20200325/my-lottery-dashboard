@@ -112,13 +112,28 @@ class TestValidation(unittest.TestCase):
         with self.assertRaises(ValueError):
             analyze([], rng=random.Random(1))
 
+    def test_single_row_rejected(self):
+        # A2 (v6.9) — single-row history degenerates to zero variance;
+        # explicit ValueError prevents silent all-hot/all-cold output.
+        with self.assertRaises(ValueError) as ctx:
+            analyze([[1, 2, 3, 4, 5, 6]], rng=random.Random(1))
+        self.assertIn(">= 2 rows", str(ctx.exception))
+
+    def test_two_rows_accepted(self):
+        # >= 2 rows is the minimum for meaningful Z-score
+        a = analyze(
+            [[1, 2, 3, 4, 5, 6], [10, 11, 12, 13, 14, 15]],
+            rng=random.Random(1),
+        )
+        self.assertFalse(a.is_fallback)
+
     def test_negative_sigma_rejected(self):
-        draws = [[1, 2, 3, 4, 5, 6]]
+        draws = [[1, 2, 3, 4, 5, 6], [10, 11, 12, 13, 14, 15]]
         with self.assertRaises(ValueError):
             analyze(draws, hot_sigma_factor=-0.5, rng=random.Random(1))
 
     def test_inverted_clamp_rejected(self):
-        draws = [[1, 2, 3, 4, 5, 6]]
+        draws = [[1, 2, 3, 4, 5, 6], [10, 11, 12, 13, 14, 15]]
         with self.assertRaises(ValueError):
             analyze(draws, sum_clamp_lo=200, sum_clamp_hi=100,
                     rng=random.Random(1))
@@ -132,7 +147,11 @@ class TestStaticFallback(unittest.TestCase):
         self.assertEqual(STATIC_FALLBACK_ANALYSIS.exclude_tails, [])
 
     def test_normal_analysis_not_fallback(self):
-        a = analyze([[1, 2, 3, 4, 5, 6]], rng=random.Random(1))
+        # >= 2 draws required since v6.9 single-row guard
+        a = analyze(
+            [[1, 2, 3, 4, 5, 6], [40, 41, 42, 43, 44, 45]],
+            rng=random.Random(1),
+        )
         self.assertFalse(a.is_fallback)
 
 
