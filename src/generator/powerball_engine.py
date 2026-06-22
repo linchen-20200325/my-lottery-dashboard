@@ -36,9 +36,11 @@ DEFAULTS = {
     "sum_range_pad": 25,
     "sum_clamp_lo": 80,         # 6 from 1-38 安全下限（理論最小 21）
     "sum_clamp_hi": 154,        # 6 from 1-38 安全上限（理論最大 213）
+    # Tail signals (v6.10: 放寬 default 讓常見情況也能觸發訊號)
+    # 詳見 history_engine.DEFAULTS 同段註解
     "overheat_recent_periods": 3,
-    "overheat_min_count": 4,
-    "dormant_periods": 10,
+    "overheat_min_count": 3,
+    "dormant_periods": 8,
 }
 
 # 靜態 fallback（Phase 2 容錯）

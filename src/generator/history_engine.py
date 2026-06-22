@@ -35,10 +35,13 @@ DEFAULTS = {
     "sum_range_pad": 30,            # ±pad around SMA
     "sum_clamp_lo": 90,             # absolute safety floor
     "sum_clamp_hi": 210,            # absolute safety ceiling
-    # Tail signals
+    # Tail signals (v6.10: 放寬 default 讓常見情況也能觸發訊號)
+    # - overheat_min_count: 4 → 3(3 期 18 slot 中,單尾數 ≥ 3 = ~17% 集中、適度異常)
+    # - dormant_periods:    10 → 8(降低 slot 數讓死寂尾數有機率出現)
+    #   舊值 P(任一尾數連 10 期空) ≈ 0.18% → 期望 ≈ 0;新值 8 期 48 slot 提高靈敏度
     "overheat_recent_periods": 3,
-    "overheat_min_count": 4,
-    "dormant_periods": 10,
+    "overheat_min_count": 3,
+    "dormant_periods": 8,
 }
 
 # Static fallback constants (Phase 2 graceful degradation)

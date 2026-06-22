@@ -446,13 +446,16 @@ def render(sample_csv_path: Path) -> None:
         + (f"{manual_sum_range[0]}–{manual_sum_range[1]}" if manual_sum_range else "未啟用")
         + "）"
     )
-    s2.metric(
-        "排除尾數",
-        str(analysis.exclude_tails) if analysis.exclude_tails else "—",
-    )
-    s2.caption(
-        f"過熱：{analysis.overheated_tails or '—'} · 死寂：{analysis.dormant_tails or '—'}"
-    )
+    # v6.10: 三項全空時改 explicit caption 避免使用者誤判為 bug
+    if not analysis.exclude_tails:
+        s2.metric("排除尾數", "✓ 無")
+        s2.caption("尾數分佈接近均勻、無極端訊號(可在側欄調低判定門檻)")
+    else:
+        s2.metric("排除尾數", str(analysis.exclude_tails))
+        s2.caption(
+            f"過熱：{analysis.overheated_tails or '—'} · "
+            f"死寂:{analysis.dormant_tails or '—'}"
+        )
 
     # --- Silent-drop notice ---
     if not manual_keys and manual_excluded_numbers:

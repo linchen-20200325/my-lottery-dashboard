@@ -116,6 +116,15 @@ my-lottery-2026/
   - 新測試：`tests/test_review_findings.py` 14 個 cases — 3 個風險各帶 raise 路徑 + 兼容性正例
   - 驗證：144 unit tests 全綠（134 → 144，+10）；既有引擎/scraper/UI 零退化
 
+## 尾數訊號 default 放寬 + UI 訊息修正 (v6.10)
+- [x] **使用者回報「尾數號碼帶不出任何數值」根因修復**  ✅ 2026-06-22
+  - 根因:`overheat_min_count=4`(3 期需單尾出 4 次 = 22% 集中,實測 577/568 期都觸發不到)+ `dormant_periods=10`(60 slots 幾乎必覆蓋所有 10 個尾數,P ≈ 0.18%)→ DEFAULT 對真實資料太嚴
+  - **A 放寬 default**:兩 engine `overheat_min_count` 4 → **3**、`dormant_periods` 10 → **8**;UI slider 因讀 `DEFAULTS` 自動跟進
+  - **B UI explicit 訊息**:兩 view 三項全空時改顯示「✓ 無」+ caption「尾數分佈接近均勻、無極端訊號(可在側欄調低判定門檻)」,避免「—」被誤判為 bug
+  - **驗證**:用倉庫真實 CSV 跑,大樂透 `exclude_tails=[1,6,8,9]`、威力彩 `[3,8,9]` — 確認新 default 有訊號;dormant 仍空(預期、屬更稀有訊號)
+  - 新測試:`test_default_overheat_threshold_triggers_on_realistic_concentration`(3 期單尾數 3+ 次必觸發)
+  - 197 unit tests 全綠(196 → +1)、pyflakes 0、`check_constitution` 7/7 PASS
+
 ## 命名收歛 + 單列守門 + 版本鎖緊 (v6.9)
 - [x] **CLAUDE.md A1 + A2 + A4 同 PR 收斂**  ✅ 2026-06-22
   - 觸發:盤點剩 3 條未結項目,三個都是「< 30 行、零行為動」邊際 fix,合一個 PR 結案

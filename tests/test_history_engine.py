@@ -88,6 +88,18 @@ class TestTailExclusion(unittest.TestCase):
             self.assertIn(t, a.dormant_tails)
             self.assertIn(t, a.exclude_tails)
 
+    def test_default_overheat_threshold_triggers_on_realistic_concentration(self):
+        # v6.10: 新 default `overheat_min_count=3` 應在「單尾數 3 期出 3 次」時觸發。
+        # 對應 README/UI 的「適度集中即觸發」設計目標。
+        draws = [
+            [3, 13, 23, 1, 2, 4],   # tail 3 出 3 次
+            [33, 5, 6, 7, 8, 9],    # tail 3 再出 1 次 → 累計 4(其中 ≥ 3)
+            [10, 11, 12, 14, 15, 16],
+        ]
+        a = analyze(draws, rng=random.Random(1))  # 用 DEFAULTS
+        self.assertIn(3, a.overheated_tails,
+                      f"new default should flag tail=3 as overheated, got {a.overheated_tails}")
+
 
 class TestAutoKeys(unittest.TestCase):
     def test_one_hot_one_cold(self):
