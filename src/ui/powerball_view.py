@@ -495,16 +495,18 @@ def render(sample_csv_path: Path) -> None:
         return
 
     # v6.13: 嚴格 pair-disjoint — 任意 2 顆配對在所有注中至多出現一次
+    # v6.15: 均衡硬上限 — 每號出現次數 ≤ ⌈6N/P⌉ + 1
     if batch_disjoint and len(tickets) < num_tickets:
         st.warning(
             f"🧩 批次不重複模式:已產出 **{len(tickets)} / {num_tickets}** 注 · "
-            f"第二區 ⚡`{bonus_pick}` — 濾網/池太緊,任意 2 顆配對只允許出現一次的規則下"
-            "湊不到目標。請放寬尾數排除、減少注數,或在「🎚️ 尾數訊號」section 把判定門檻拉高。"
+            f"第二區 ⚡`{bonus_pick}` — 濾網/池太緊,「pair 不重複 + 號碼出現次數均衡」"
+            "的雙約束下湊不到目標。請放寬尾數排除、減少注數,或在「🎚️ 尾數訊號」"
+            "section 把判定門檻拉高。"
         )
     elif batch_disjoint:
         st.success(
             f"✅ 產出 {len(tickets)} 注 · 第二區 ⚡`{bonus_pick}` · "
-            "🧩 任意 2 顆配對在所有注中至多出現一次"
+            "🧩 pair 不重複 + 號碼出現次數均衡"
         )
     else:
         st.subheader(f"✅ 產出 {len(tickets)} 注 · 第二區 ⚡`{bonus_pick}`")

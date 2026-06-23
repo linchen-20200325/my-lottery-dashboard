@@ -16,7 +16,9 @@ Stdlib only: `random` + `itertools` (+ `collections`/`statistics` via engine).
 
 from __future__ import annotations
 
+import math
 import random
+from collections import Counter
 from itertools import combinations
 from typing import Iterable, Sequence
 
@@ -118,21 +120,28 @@ def _generate_batch_disjoint(
     num_tickets: int,
     rng: random.Random,
 ) -> list[tuple[int, ...]]:
-    """批次覆蓋模式(v6.13):嚴格 pair-disjoint — 任意 2 顆配對在所有注中至多出現一次。
+    """批次覆蓋模式(v6.15):嚴格 pair-disjoint + 均衡硬上限。
 
-    理論上限 = ⌊C(pool, 2) / C(6, 2)⌋(扣濾網實際更少)。比 number-disjoint 寬鬆
-    (允許共單號)但嚴格無共 pair,符合「組合不重複」直覺。
+    v6.13:任意 2 顆配對在所有注中至多出現一次。
+    v6.15:在 v6.13 基礎上加「每號出現次數 ≤ ⌈6N/P⌉ + 1」的均衡硬上限
+            (P = 有效池大小;+1 為使用者明示允許的容差);防止 pair-disjoint
+            雖然不重複但某號 0 次、某號 5 次的高方差分佈。
 
-    三相 filter 漸進降級,每相內仍嚴格 pair-disjoint:
+    理論上限 = ⌊C(pool, 2) / C(6, 2)⌋(扣濾網實際更少)。
+
+    三相 filter 漸進降級,每相內嚴格 pair-disjoint + 均衡 cap:
     - sub-A: dynamic sum (s_lo, s_hi) + full 5 filters
     - sub-B: static [SUM_MIN, SUM_MAX] + full 5 filters
     - sub-C: 無 sum 邊界 + 無次要濾網
 
-    湊不到 num_tickets 直接 return,呼叫端負責 warn(不漸進放寬 pair 約束)。
+    湊不到 num_tickets 直接 return,呼叫端負責 warn。
     """
     results: list[tuple[int, ...]] = []
     seen: set[tuple[int, ...]] = set()
     used_pairs: set[tuple[int, int]] = set()
+    usage: Counter[int] = Counter()
+    # v6.15 均衡硬上限:每號出現 ≤ ⌈6N/P⌉ + 1(容差 1)
+    max_per_number = math.ceil(TICKET_SIZE * num_tickets / len(pool)) + 1
 
     drag_candidates = pool - key_set
     needed = TICKET_SIZE - len(key_set)
@@ -155,6 +164,8 @@ def _generate_batch_disjoint(
             ticket = tuple(sorted(key_set.union(combo)))
             if ticket in seen:
                 continue
+            if any(usage[n] >= max_per_number for n in ticket):
+                continue  # v6.15 均衡硬上限
             if not _passes_filters(ticket, sub_lo, sub_hi, apply_secondary=apply_full):
                 continue
             new_pairs = set(combinations(ticket, 2))
@@ -163,6 +174,7 @@ def _generate_batch_disjoint(
             results.append(ticket)
             seen.add(ticket)
             used_pairs |= new_pairs
+            usage.update(ticket)
 
     return results
 
