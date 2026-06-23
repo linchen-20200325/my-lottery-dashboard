@@ -47,6 +47,18 @@ from src.generator.powerball_picker import (
 # --- Cached helpers ----------------------------------------------------------
 
 
+def _expand_tails_to_numbers(
+    tails: list[int] | tuple[int, ...] | set[int],
+    lo: int,
+    hi: int,
+) -> list[int]:
+    """v6.17:把排除尾數 list 展開為對應的具體號碼 list。"""
+    if not tails:
+        return []
+    tail_set = set(tails)
+    return [n for n in range(lo, hi + 1) if (n % 10) in tail_set]
+
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def _load_bundled(
     path_str: str,
@@ -456,6 +468,36 @@ def render(sample_csv_path: Path) -> None:
         st.markdown("**冷號**：" +
                     (" ".join(f"`{n}`" for n in analysis.bonus_cold) or "—"))
         st.markdown(f"**自動選號**：`{analysis.bonus_auto_pick}`")
+
+    # --- v6.17: 把排除尾數展開為具體號碼 + 套用按鈕 ---
+    _expanded = _expand_tails_to_numbers(_effective_tails, MAIN_POOL_MIN, MAIN_POOL_MAX)
+    if _expanded:
+        st.markdown(
+            f"💡 **系統建議排除這 {len(_expanded)} 顆**(由排除尾數 {sorted(_effective_tails)} 展開):"
+            + " ".join(f"`{n:02d}`" for n in _expanded)
+        )
+        bcol1, bcol2, bcol3 = st.columns([1, 1, 2])
+        if bcol1.button(
+            "📥 套用到「排除特定號碼」",
+            key="pb_apply_sys_excl",
+            use_container_width=True,
+            help="把上方系統建議展開的號碼一鍵填入排除清單,你可以再增加或取消個別號碼",
+        ):
+            st.session_state["pb_excl_pills"] = list(_expanded)
+            st.session_state["pb_excl_multi"] = list(_expanded)
+            st.rerun()
+        if bcol2.button(
+            "🧹 清空排除清單",
+            key="pb_clear_excl",
+            use_container_width=True,
+        ):
+            st.session_state["pb_excl_pills"] = []
+            st.session_state["pb_excl_multi"] = []
+            st.rerun()
+        st.caption(
+            "套用 = 把上面號碼寫進「排除特定號碼」按鈕區 ｜ "
+            "套用後可在參數設定 → 排除特定號碼 取消保留 / 額外加碼"
+        )
 
     st.divider()
 

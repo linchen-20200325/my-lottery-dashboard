@@ -48,6 +48,21 @@ from src.generator.lotto_picker import (
 # --- Cached helpers (path-as-string for cache key stability) ------------------
 
 
+def _expand_tails_to_numbers(
+    tails: list[int] | tuple[int, ...] | set[int],
+    lo: int,
+    hi: int,
+) -> list[int]:
+    """v6.17:把排除尾數 list 展開為對應的具體號碼 list。
+
+    例:tails=[1,6] + lo=1 + hi=49 → [1, 6, 11, 16, 21, 26, 31, 36, 41, 46]
+    """
+    if not tails:
+        return []
+    tail_set = set(tails)
+    return [n for n in range(lo, hi + 1) if (n % 10) in tail_set]
+
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def _load_bundled(path_str: str) -> tuple[list[list[int]], HistoryProvenance]:
     return load_csv_file_with_provenance(Path(path_str))
@@ -499,6 +514,36 @@ def render(sample_csv_path: Path) -> None:
     else:
         s2.metric("排除尾數", str(_effective_tails))
         s2.caption(f"來源:{_source_label} · {_detail}")
+
+    # --- v6.17: 把排除尾數展開為具體號碼 + 套用按鈕 ---
+    _expanded = _expand_tails_to_numbers(_effective_tails, POOL_MIN, POOL_MAX)
+    if _expanded:
+        st.markdown(
+            f"💡 **系統建議排除這 {len(_expanded)} 顆**(由排除尾數 {sorted(_effective_tails)} 展開):"
+            + " ".join(f"`{n:02d}`" for n in _expanded)
+        )
+        bcol1, bcol2, bcol3 = st.columns([1, 1, 2])
+        if bcol1.button(
+            "📥 套用到「排除特定號碼」",
+            key="l649_apply_sys_excl",
+            use_container_width=True,
+            help="把上方系統建議展開的號碼一鍵填入排除清單,你可以再增加或取消個別號碼",
+        ):
+            st.session_state["l649_excl_pills"] = list(_expanded)
+            st.session_state["l649_excl_multi"] = list(_expanded)
+            st.rerun()
+        if bcol2.button(
+            "🧹 清空排除清單",
+            key="l649_clear_excl",
+            use_container_width=True,
+        ):
+            st.session_state["l649_excl_pills"] = []
+            st.session_state["l649_excl_multi"] = []
+            st.rerun()
+        st.caption(
+            "套用 = 把上面 20 顆寫進「排除特定號碼」按鈕區 ｜ "
+            "套用後可在參數設定 → 排除特定號碼 取消保留 / 額外加碼"
+        )
 
     # --- Silent-drop notice ---
     if not manual_keys and manual_excluded_numbers:
