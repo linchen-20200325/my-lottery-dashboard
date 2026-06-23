@@ -305,10 +305,23 @@ class TestSilentDropAndDisjoint(unittest.TestCase):
                 )
 
 
-class TestBatchDisjoint(unittest.TestCase):
-    """批次推薦模式：注間 6 顆號碼完全不重複。"""
+def _assert_pair_disjoint(test, tickets):
+    """每個 unordered pair 在所有注中至多出現一次(v6.13 契約)。"""
+    from itertools import combinations
+    used: set[tuple[int, int]] = set()
+    for idx, t in enumerate(tickets):
+        for pair in combinations(sorted(t), 2):
+            test.assertNotIn(
+                pair, used,
+                f"pair {pair} duplicated in ticket #{idx + 1}: {t}",
+            )
+            used.add(pair)
 
-    def test_no_keys_all_numbers_disjoint(self):
+
+class TestBatchDisjoint(unittest.TestCase):
+    """批次推薦模式 (v6.13):嚴格 pair-disjoint — 任意 2 顆配對在所有注中至多出現一次。"""
+
+    def test_no_keys_pair_disjoint(self):
         analysis = _custom_analysis(auto_keys=[])
         tickets, _ = generate_tickets(
             history_draws=HISTORY,
@@ -319,11 +332,9 @@ class TestBatchDisjoint(unittest.TestCase):
             rng=random.Random(42),
         )
         self.assertGreaterEqual(len(tickets), 2)
-        for i in range(len(tickets)):
-            for j in range(i + 1, len(tickets)):
-                self.assertFalse(set(tickets[i]) & set(tickets[j]))
+        _assert_pair_disjoint(self, tickets)
 
-    def test_keys_are_disabled_and_all_numbers_disjoint(self):
+    def test_keys_are_disabled_and_pair_disjoint(self):
         analysis = _custom_analysis(auto_keys=[7, 33], sum_lo=90, sum_hi=210)
         tickets, _ = generate_tickets(
             history_draws=HISTORY,
@@ -335,15 +346,18 @@ class TestBatchDisjoint(unittest.TestCase):
             rng=random.Random(42),
         )
         self.assertGreaterEqual(len(tickets), 1)
-        for i in range(len(tickets)):
-            for j in range(i + 1, len(tickets)):
-                self.assertFalse(set(tickets[i]) & set(tickets[j]))
+        _assert_pair_disjoint(self, tickets)
+        # 膽碼必須被全域停用 — 否則 pair (7, 33) 會出現在每注 = 共 pair
+        for t in tickets:
+            self.assertFalse(
+                {7, 33}.issubset(set(t)),
+                f"keys (7, 33) leaked into ticket {t}; batch_disjoint must disable keys",
+            )
 
-    def test_phase2_fallback_fills_when_pool_too_small(self):
-        # v6.12: 池 29 顆(排除尾數 4 個 → 49-20=29),要 10 注 → 物理上限 ⌊29/6⌋=4。
-        # Phase 1 嚴格 disjoint 上限後,Phase 2 允許共號補齊;總數應該達到目標。
-        from src.generator.lotto_picker import _count_disjoint_prefix
-
+    def test_user_case_pair_disjoint_under_excluded_tails(self):
+        # v6.13 痛點 case:池 29 顆(排除尾數 [1,6,8,9])+ 要 10 注
+        # 嚴格 pair-disjoint 理論上限 ⌊C(29,2)/C(6,2)⌋ = ⌊406/15⌋ = 27 注
+        # 扣濾網經驗 ~50% 保留 → 預期 ≥ 5 注、目標 10 注
         analysis = _custom_analysis(auto_keys=[], sum_lo=90, sum_hi=210)
         tickets, _ = generate_tickets(
             history_draws=HISTORY,
@@ -353,20 +367,18 @@ class TestBatchDisjoint(unittest.TestCase):
             batch_disjoint=True,
             rng=random.Random(42),
         )
-        # 已補齊到目標(或非常接近,容許濾網極端時補不滿但 ≥ 物理上限)
+        # 至少要超過原 v6.12 的 number-disjoint 上限 ⌊29/6⌋=4
         self.assertGreater(
             len(tickets), 4,
-            f"Phase 2 fallback should add tickets beyond physical limit, got {len(tickets)}",
+            f"pair-disjoint should produce more than number-disjoint cap, got {len(tickets)}",
         )
-        # 每注 6 顆內部仍唯一、值域合法、且整體不會出現完全相同的整注
+        # 每注 6 顆內部唯一、值域合法、整體無 exact dup
         for t in tickets:
             self.assertEqual(len(set(t)), 6)
             self.assertTrue(all(1 <= n <= 49 for n in t))
         self.assertEqual(len(set(tickets)), len(tickets), "no exact duplicate tickets")
-        # Phase 1 disjoint prefix 必 ≤ 物理上限(扣掉濾網拒絕)
-        prefix = _count_disjoint_prefix(tickets)
-        self.assertLessEqual(prefix, 29 // 6)
-        self.assertGreaterEqual(prefix, 1)
+        # 核心契約:嚴格 pair-disjoint
+        _assert_pair_disjoint(self, tickets)
 
 
 class TestStats(unittest.TestCase):

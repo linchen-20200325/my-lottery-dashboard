@@ -38,7 +38,6 @@ from src.generator.lotto_picker import (
     MIN_PRIME_COUNT,
     SUM_MAX,
     SUM_MIN,
-    _count_disjoint_prefix,
     generate_tickets,
     ticket_stats,
 )
@@ -518,27 +517,18 @@ def render(sample_csv_path: Path) -> None:
         return
 
     _skip_legacy_split = False
-    _disjoint_count = 0
     if batch_disjoint:
-        # v6.12: 算 leading disjoint prefix(Phase 1 真不重複注數),Phase 2/3 補齊注帶共號
-        _disjoint_count = _count_disjoint_prefix(tickets)
-        _overlap_count = len(tickets) - _disjoint_count
+        # v6.13: 嚴格 pair-disjoint — 任意 2 顆配對在所有注中至多出現一次
         if len(tickets) < num_tickets:
             st.warning(
-                f"🧩 批次不重複模式:已產出 **{len(tickets)} / {num_tickets}** 注 "
-                f"(完全不重複 {_disjoint_count} + 補齊 {_overlap_count})— "
-                "池過小且濾網嚴。請放寬尾數排除或減少注數。"
+                f"🧩 批次不重複模式:已產出 **{len(tickets)} / {num_tickets}** 注 — "
+                "濾網/池太緊,任意 2 顆配對只允許出現一次的規則下湊不到目標。"
+                "請放寬尾數排除、減少注數,或在「🎚️ 尾數訊號」section 把判定門檻拉高(降低排除)。"
             )
-        elif _overlap_count == 0:
-            st.success(f"🧩 批次不重複模式:✅ **全部 {len(tickets)} 注完全不重複**")
         else:
             st.success(
-                f"🧩 批次不重複模式:**前 {_disjoint_count} 注完全不重複** + "
-                f"**後 {_overlap_count} 注允許共號補齊**(共 {len(tickets)} 注)"
-            )
-            st.caption(
-                "池內可用號碼有限,達物理上限 ⌊pool/6⌋ 後改用標準模式補齊;"
-                "後段注的部分號碼會與前段重疊(但每注 6 顆內部不重複、且整注不會與前段相同)。"
+                f"🧩 批次不重複模式:已產出 {len(tickets)} 注,"
+                "任意 2 顆配對在所有注中至多出現一次"
             )
         _skip_legacy_split = True
 
@@ -597,15 +587,6 @@ def render(sample_csv_path: Path) -> None:
     with col_left:
         st.subheader("🎟️ 推薦組合")
         for idx, ticket in enumerate(tickets, start=1):
-            # v6.12: batch_disjoint 模式且發生 Phase 2/3 降級時,插分隔線
-            if (
-                batch_disjoint
-                and _disjoint_count > 0
-                and _disjoint_count < len(tickets)
-                and idx == _disjoint_count + 1
-            ):
-                st.markdown("---")
-                st.caption("⬇️ 以下為 Phase 2/3 補齊注(允許與上方共號)")
             nums_str = "   ".join(f"`{n:02d}`" for n in ticket)
             st.markdown(f"**第 {idx} 注**:{nums_str}")
 

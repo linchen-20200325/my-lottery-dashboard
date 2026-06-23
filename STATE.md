@@ -116,6 +116,18 @@ my-lottery-2026/
   - 新測試：`tests/test_review_findings.py` 14 個 cases — 3 個風險各帶 raise 路徑 + 兼容性正例
   - 驗證：144 unit tests 全綠（134 → 144，+10）；既有引擎/scraper/UI 零退化
 
+## 批次不重複模式改 pair-disjoint(v6.13)
+- [x] **使用者澄清「組合不重複」= 任意 2 顆 pair 不重複**  ✅ 2026-06-23
+  - 觸發:v6.12 上線後 user 回報「#4 vs #1 共 4 顆 = 算重複」— 跟我以為的「整 6 顆 tuple 唯一」不一樣
+  - 真正語意:「(1,2) 出現在某注後,其他注不能再出現 (1,2)」= **pair-disjoint**(每個 unordered 2-tuple 在所有注中至多出現一次)
+  - **修法**:兩 picker `_generate_batch_disjoint()` 從 v6.12 的「number-disjoint Phase 1 + 共號補齊 Phase 2/3」改為**嚴格 pair-disjoint** 三相 filter 漸進降級(sub-A: dynamic sum + full filter / sub-B: static sum + full filter / sub-C: 無 sum + 無次要濾網);每相內**嚴格無共 pair**,湊不到 num_tickets 直接 return + 呼叫端 warn
+  - **物理基礎**:大樂透 6/49 — 池內可能 pair = C(pool, 2);每注用 15;理論上限 ⌊C(pool,2)/15⌋。對 user case(pool=29 排除 [1,6,8,9])= ⌊406/15⌋ = **27 注**,比 v6.12 的 number-disjoint 上限 ⌊29/6⌋=4 寬鬆 6 倍以上
+  - **UI 簡化**:移除 v6.12 的「Phase 1 disjoint + Phase 2/3 補齊」分段顯示 + 分隔線 + `_count_disjoint_prefix()` 呼叫;改成單一訊息「已產出 N 注,任意 2 顆配對在所有注中至多出現一次」
+  - **`_count_disjoint_prefix` helper 移除**(v6.12 引入、v6.13 不再需要)
+  - **契約變更**:`batch_disjoint=True` 從「leading prefix number-disjoint + 後段共號」改為「嚴格 pair-disjoint(無 fallback)」;兩 picker test 同步改用 `_assert_pair_disjoint(self, tickets)` helper 驗證
+  - **實測**(user case):大樂透 history=577 期、排除 [1,6,8,9]、num_tickets=10、seed=42 → **產出 10/10**(150 個 pair 全唯一,用了池 406 的 37%)
+  - 199 unit tests 全綠(同 v6.12,test 數量不變但 case 改寫)、pyflakes 0、`check_constitution` 7/7 PASS
+
 ## 批次不重複模式 Phase 2/3 補齊(v6.12)
 - [x] **使用者回報「批次不重複模式 3/10 就停」根因修復**  ✅ 2026-06-23
   - 觸發:截圖 — 大樂透排除尾數 [1,6,8,9] + 注數 10 + 批次不重複模式 → 「已產出 3/10 注。若需更多注,請放寬條件或減少注數。」

@@ -39,7 +39,6 @@ from src.generator.powerball_picker import (
     MIN_PRIME_COUNT,
     SUM_MAX,
     SUM_MIN,
-    _count_disjoint_prefix,
     generate_tickets,
     ticket_stats,
 )
@@ -495,43 +494,22 @@ def render(sample_csv_path: Path) -> None:
         st.warning("⚠️ 五大濾網篩光所有候選 — 請放寬和值區間或減少排除號碼。")
         return
 
-    # v6.12: batch_disjoint 模式產出分段(Phase 1 disjoint + Phase 2/3 共號補齊)
-    _disjoint_count_pb = _count_disjoint_prefix(tickets) if batch_disjoint else 0
-
-    if batch_disjoint:
-        _overlap_pb = len(tickets) - _disjoint_count_pb
-        if len(tickets) < num_tickets:
-            st.warning(
-                f"🧩 批次不重複模式:已產出 **{len(tickets)} / {num_tickets}** 注 "
-                f"(完全不重複 {_disjoint_count_pb} + 補齊 {_overlap_pb})— "
-                "池過小且濾網嚴。請放寬尾數排除或減少注數。"
-            )
-        elif _overlap_pb == 0:
-            st.success(
-                f"✅ 產出 {len(tickets)} 注 · 第二區 ⚡`{bonus_pick}` · "
-                "🧩 全部完全不重複"
-            )
-        else:
-            st.success(
-                f"✅ 產出 {len(tickets)} 注 · 第二區 ⚡`{bonus_pick}` · "
-                f"🧩 前 {_disjoint_count_pb} 注完全不重複 + 後 {_overlap_pb} 注允許共號補齊"
-            )
-            st.caption(
-                "池內可用號碼有限,達物理上限 ⌊pool/6⌋ 後改用標準模式補齊;"
-                "後段注的部分號碼會與前段重疊(但每注 6 顆內部不重複、且整注不會與前段相同)。"
-            )
+    # v6.13: 嚴格 pair-disjoint — 任意 2 顆配對在所有注中至多出現一次
+    if batch_disjoint and len(tickets) < num_tickets:
+        st.warning(
+            f"🧩 批次不重複模式:已產出 **{len(tickets)} / {num_tickets}** 注 · "
+            f"第二區 ⚡`{bonus_pick}` — 濾網/池太緊,任意 2 顆配對只允許出現一次的規則下"
+            "湊不到目標。請放寬尾數排除、減少注數,或在「🎚️ 尾數訊號」section 把判定門檻拉高。"
+        )
+    elif batch_disjoint:
+        st.success(
+            f"✅ 產出 {len(tickets)} 注 · 第二區 ⚡`{bonus_pick}` · "
+            "🧩 任意 2 顆配對在所有注中至多出現一次"
+        )
     else:
         st.subheader(f"✅ 產出 {len(tickets)} 注 · 第二區 ⚡`{bonus_pick}`")
 
     for i, t in enumerate(tickets, 1):
-        if (
-            batch_disjoint
-            and _disjoint_count_pb > 0
-            and _disjoint_count_pb < len(tickets)
-            and i == _disjoint_count_pb + 1
-        ):
-            st.markdown("---")
-            st.caption("⬇️ 以下為 Phase 2/3 補齊注(允許與上方共號)")
         stats = ticket_stats(t)
         cols = st.columns([3, 1, 1, 1, 1])
         cols[0].markdown(

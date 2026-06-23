@@ -143,30 +143,32 @@ class TestManualKeysAndExclusions(unittest.TestCase):
             self.assertNotIn(17, t)
 
 
+def _assert_pair_disjoint(test, tickets):
+    """每個 unordered pair 在所有注中至多出現一次(v6.13 契約)。"""
+    from itertools import combinations
+    used: set[tuple[int, int]] = set()
+    for idx, t in enumerate(tickets):
+        for pair in combinations(sorted(t), 2):
+            test.assertNotIn(
+                pair, used,
+                f"pair {pair} duplicated in ticket #{idx + 1}: {t}",
+            )
+            used.add(pair)
+
+
 class TestBatchDisjoint(unittest.TestCase):
+    """批次推薦模式 (v6.13):嚴格 pair-disjoint。"""
 
-    def test_batch_disjoint_no_keys(self):
-        # v6.12: 新契約 — 只「leading prefix」嚴格 disjoint;Phase 2/3 補齊允許共號
-        from src.generator.powerball_picker import _count_disjoint_prefix
-
+    def test_batch_disjoint_no_keys_pair_disjoint(self):
         tickets, _, _ = generate_tickets(
             _synthetic_draws(), _synthetic_specials(),
             num_tickets=3, manual_keys=None,
             batch_disjoint=True, rng=random.Random(3),
         )
         self.assertGreaterEqual(len(tickets), 2)
-        prefix = _count_disjoint_prefix(tickets)
-        self.assertGreaterEqual(prefix, 1)
-        for i in range(prefix):
-            for j in range(i + 1, prefix):
-                self.assertFalse(
-                    set(tickets[i]) & set(tickets[j]),
-                    f"prefix tickets {i},{j} should be disjoint",
-                )
+        _assert_pair_disjoint(self, tickets)
 
-    def test_batch_disjoint_disables_keys_and_keeps_full_disjoint(self):
-        from src.generator.powerball_picker import _count_disjoint_prefix
-
+    def test_batch_disjoint_disables_keys(self):
         tickets, _, _ = generate_tickets(
             _synthetic_draws(), _synthetic_specials(),
             num_tickets=3, manual_keys=[7, 17],
@@ -174,33 +176,29 @@ class TestBatchDisjoint(unittest.TestCase):
             batch_disjoint=True, rng=random.Random(11),
         )
         self.assertGreaterEqual(len(tickets), 1)
-        prefix = _count_disjoint_prefix(tickets)
-        for i in range(prefix):
-            for j in range(i + 1, prefix):
-                self.assertFalse(
-                    set(tickets[i]) & set(tickets[j]),
-                    f"prefix tickets {i},{j} should be disjoint",
-                )
+        _assert_pair_disjoint(self, tickets)
+        # 膽碼必須被全域停用 — 否則 pair (7, 17) 會出現在每注
+        for t in tickets:
+            self.assertFalse(
+                {7, 17}.issubset(set(t)),
+                f"keys (7, 17) leaked into ticket {t}",
+            )
 
-    def test_phase2_fallback_fills_when_pool_too_small(self):
-        # v6.12: 排除 4 個尾數 → pool 從 38 砍到約 30;
-        # 物理上限 ⌊30/6⌋ = 5;要 8 注 → Phase 2/3 應該補齊
-        from src.generator.powerball_picker import _count_disjoint_prefix
-
+    def test_pair_disjoint_under_excluded_tails(self):
+        # v6.13: 排除 4 個尾數 → pool 從 38 砍到約 30;
+        # 嚴格 pair-disjoint 理論上限 ⌊C(30,2)/C(6,2)⌋ = ⌊435/15⌋ = 29 注
         tickets, _, _ = generate_tickets(
             _synthetic_draws(), _synthetic_specials(),
             num_tickets=8,
             manual_excluded_tails=[1, 6, 8, 9],
             batch_disjoint=True, rng=random.Random(42),
         )
-        self.assertGreater(len(tickets), 5, "Phase 2 fallback should add beyond physical limit")
-        # 每注 6 顆內部唯一、值域 [1,38];且整體無 exact 重複整注
+        self.assertGreaterEqual(len(tickets), 1)
         for t in tickets:
             self.assertEqual(len(set(t)), 6)
             self.assertTrue(all(1 <= n <= 38 for n in t))
         self.assertEqual(len(set(tickets)), len(tickets), "no exact duplicate tickets")
-        prefix = _count_disjoint_prefix(tickets)
-        self.assertGreaterEqual(prefix, 1)
+        _assert_pair_disjoint(self, tickets)
 
 
 if __name__ == "__main__":
