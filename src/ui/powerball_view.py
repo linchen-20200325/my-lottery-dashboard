@@ -39,6 +39,7 @@ from src.generator.powerball_picker import (
     MIN_PRIME_COUNT,
     SUM_MAX,
     SUM_MIN,
+    _count_disjoint_prefix,
     generate_tickets,
     ticket_stats,
 )
@@ -494,8 +495,43 @@ def render(sample_csv_path: Path) -> None:
         st.warning("⚠️ 五大濾網篩光所有候選 — 請放寬和值區間或減少排除號碼。")
         return
 
-    st.subheader(f"✅ 產出 {len(tickets)} 注 · 第二區 ⚡`{bonus_pick}`")
+    # v6.12: batch_disjoint 模式產出分段(Phase 1 disjoint + Phase 2/3 共號補齊)
+    _disjoint_count_pb = _count_disjoint_prefix(tickets) if batch_disjoint else 0
+
+    if batch_disjoint:
+        _overlap_pb = len(tickets) - _disjoint_count_pb
+        if len(tickets) < num_tickets:
+            st.warning(
+                f"🧩 批次不重複模式:已產出 **{len(tickets)} / {num_tickets}** 注 "
+                f"(完全不重複 {_disjoint_count_pb} + 補齊 {_overlap_pb})— "
+                "池過小且濾網嚴。請放寬尾數排除或減少注數。"
+            )
+        elif _overlap_pb == 0:
+            st.success(
+                f"✅ 產出 {len(tickets)} 注 · 第二區 ⚡`{bonus_pick}` · "
+                "🧩 全部完全不重複"
+            )
+        else:
+            st.success(
+                f"✅ 產出 {len(tickets)} 注 · 第二區 ⚡`{bonus_pick}` · "
+                f"🧩 前 {_disjoint_count_pb} 注完全不重複 + 後 {_overlap_pb} 注允許共號補齊"
+            )
+            st.caption(
+                "池內可用號碼有限,達物理上限 ⌊pool/6⌋ 後改用標準模式補齊;"
+                "後段注的部分號碼會與前段重疊(但每注 6 顆內部不重複、且整注不會與前段相同)。"
+            )
+    else:
+        st.subheader(f"✅ 產出 {len(tickets)} 注 · 第二區 ⚡`{bonus_pick}`")
+
     for i, t in enumerate(tickets, 1):
+        if (
+            batch_disjoint
+            and _disjoint_count_pb > 0
+            and _disjoint_count_pb < len(tickets)
+            and i == _disjoint_count_pb + 1
+        ):
+            st.markdown("---")
+            st.caption("⬇️ 以下為 Phase 2/3 補齊注(允許與上方共號)")
         stats = ticket_stats(t)
         cols = st.columns([3, 1, 1, 1, 1])
         cols[0].markdown(
@@ -507,9 +543,6 @@ def render(sample_csv_path: Path) -> None:
         cols[2].metric("奇", stats["odd_count"])
         cols[3].metric(f">{BIG_THRESHOLD}", stats["big_count"])
         cols[4].metric("質", stats["prime_count"])
-
-    if batch_disjoint:
-        st.caption("✅ 批次推薦模式：各注 6 顆號碼完全不重複。")
 
     st.caption(
         "提醒：本工具僅為數學優化器，無法改變獨立隨機事件之期望值；理性投注。"

@@ -118,7 +118,13 @@ def _generate_batch_disjoint(
     num_tickets: int,
     rng: random.Random,
 ) -> list[tuple[int, ...]]:
-    """Generate tickets with full number disjointness across the whole batch."""
+    """批次覆蓋模式三相產出:
+    - Phase 1: 嚴格 disjoint(物理上限 = ⌊pool/6⌋ 注)
+    - Phase 2: 達上限仍不足 → 允許共號補齊(同濾網)
+    - Phase 3: 仍不足 → 放鬆濾網(同 standard mode Round 2 sub-B/C)
+
+    呼叫端用 `_count_disjoint_prefix(results)` 取得 Phase 1 注數以分段顯示。
+    """
     results: list[tuple[int, ...]] = []
     seen: set[tuple[int, ...]] = set()
     used_numbers: set[int] = set()
@@ -129,6 +135,8 @@ def _generate_batch_disjoint(
         return results  # caller already validated drag pool size; defensive
     all_combos = list(combinations(sorted(drag_candidates), needed))
     rng.shuffle(all_combos)
+
+    # Phase 1: 嚴格 disjoint
     for combo in all_combos:
         if len(results) >= num_tickets:
             break
@@ -144,7 +152,57 @@ def _generate_batch_disjoint(
         seen.add(ticket)
         used_numbers |= combo_set
 
+    # Phase 2: 達到物理上限 ⌊pool/6⌋ 仍不足 → 同濾網但允許與前段共號
+    if len(results) < num_tickets:
+        for combo in all_combos:
+            if len(results) >= num_tickets:
+                break
+            ticket = tuple(sorted(key_set.union(combo)))
+            if ticket in seen:
+                continue
+            if not _passes_filters(ticket, s_lo, s_hi, apply_secondary=True):
+                continue
+            results.append(ticket)
+            seen.add(ticket)
+
+    # Phase 3: 仍不足 → 漸進放寬濾網(對齊 standard mode 的 sub-B/C)
+    if len(results) < num_tickets:
+        sub_rounds = (
+            ((SUM_MIN, SUM_MAX), True),
+            ((TICKET_SIZE * POOL_MIN, TICKET_SIZE * POOL_MAX), False),
+        )
+        for (sub_lo, sub_hi), apply_full in sub_rounds:
+            if len(results) >= num_tickets:
+                break
+            for combo in all_combos:
+                if len(results) >= num_tickets:
+                    break
+                ticket = tuple(sorted(key_set.union(combo)))
+                if ticket in seen:
+                    continue
+                if not _passes_filters(ticket, sub_lo, sub_hi, apply_secondary=apply_full):
+                    continue
+                results.append(ticket)
+                seen.add(ticket)
+
     return results
+
+
+def _count_disjoint_prefix(tickets: Sequence[Sequence[int]]) -> int:
+    """前面有幾注是 pairwise number-disjoint(UI 分段用)。
+
+    Phase 2/3 的補齊注必然與前段共號(因為 pool 已被 Phase 1 用滿),
+    因此 leading disjoint prefix 即 Phase 1 的實際產出數。
+    """
+    used: set[int] = set()
+    count = 0
+    for t in tickets:
+        s = set(t)
+        if s & used:
+            break
+        used |= s
+        count += 1
+    return count
 
 
 # --- Core algorithm -----------------------------------------------------------

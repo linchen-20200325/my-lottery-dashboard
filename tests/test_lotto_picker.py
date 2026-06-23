@@ -339,6 +339,35 @@ class TestBatchDisjoint(unittest.TestCase):
             for j in range(i + 1, len(tickets)):
                 self.assertFalse(set(tickets[i]) & set(tickets[j]))
 
+    def test_phase2_fallback_fills_when_pool_too_small(self):
+        # v6.12: 池 29 顆(排除尾數 4 個 → 49-20=29),要 10 注 → 物理上限 ⌊29/6⌋=4。
+        # Phase 1 嚴格 disjoint 上限後,Phase 2 允許共號補齊;總數應該達到目標。
+        from src.generator.lotto_picker import _count_disjoint_prefix
+
+        analysis = _custom_analysis(auto_keys=[], sum_lo=90, sum_hi=210)
+        tickets, _ = generate_tickets(
+            history_draws=HISTORY,
+            num_tickets=10,
+            manual_excluded_tails=[1, 6, 8, 9],
+            precomputed_analysis=analysis,
+            batch_disjoint=True,
+            rng=random.Random(42),
+        )
+        # 已補齊到目標(或非常接近,容許濾網極端時補不滿但 ≥ 物理上限)
+        self.assertGreater(
+            len(tickets), 4,
+            f"Phase 2 fallback should add tickets beyond physical limit, got {len(tickets)}",
+        )
+        # 每注 6 顆內部仍唯一、值域合法、且整體不會出現完全相同的整注
+        for t in tickets:
+            self.assertEqual(len(set(t)), 6)
+            self.assertTrue(all(1 <= n <= 49 for n in t))
+        self.assertEqual(len(set(tickets)), len(tickets), "no exact duplicate tickets")
+        # Phase 1 disjoint prefix 必 ≤ 物理上限(扣掉濾網拒絕)
+        prefix = _count_disjoint_prefix(tickets)
+        self.assertLessEqual(prefix, 29 // 6)
+        self.assertGreaterEqual(prefix, 1)
+
 
 class TestStats(unittest.TestCase):
     def test_stats_basic(self):

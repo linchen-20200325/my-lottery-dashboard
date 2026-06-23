@@ -116,6 +116,21 @@ my-lottery-2026/
   - 新測試：`tests/test_review_findings.py` 14 個 cases — 3 個風險各帶 raise 路徑 + 兼容性正例
   - 驗證：144 unit tests 全綠（134 → 144，+10）；既有引擎/scraper/UI 零退化
 
+## 批次不重複模式 Phase 2/3 補齊(v6.12)
+- [x] **使用者回報「批次不重複模式 3/10 就停」根因修復**  ✅ 2026-06-23
+  - 觸發:截圖 — 大樂透排除尾數 [1,6,8,9] + 注數 10 + 批次不重複模式 → 「已產出 3/10 注。若需更多注,請放寬條件或減少注數。」
+  - 根因(物理硬上限,**不是 bug**):池 = 49 − 排除尾數 20 顆 = 29 顆。物理上限 = ⌊29/6⌋ = 4 注。第 4 注被五大濾網卡掉 → 3 注;再怎麼放寬濾網都頂多 4 注(數學上限)
+  - 對比:standard mode 早就有 Round 2 disjoint fallback 三層漸進放寬;**batch_disjoint mode 卻無 fallback**,produce 不到就直接 return — 設計不一致
+  - **修法**:兩 picker `_generate_batch_disjoint()` 改三相產出
+    - **Phase 1**(原行為):嚴格 disjoint,物理上限 = ⌊pool/6⌋ 注
+    - **Phase 2**(新):達上限仍不足 → **允許與前段共號補齊**(同濾網);新注的 6 顆內部仍唯一,但部分號碼可與前段重疊;整注不會與前段相同(`seen` set 守)
+    - **Phase 3**(新):仍不足 → 漸進放寬濾網(對齊 standard mode 的 Round 2 sub-B/C):static sum → 無 sum + 無次要濾網
+  - **UI 顯示**:兩 view 加 `_count_disjoint_prefix(tickets)` 算 Phase 1 注數;message 改顯示「前 K 注完全不重複 + 後 (N−K) 注允許共號補齊」;ticket 清單中加分隔線標示降級段
+  - **新增 helper**:`lotto_picker._count_disjoint_prefix()` + `powerball_picker._count_disjoint_prefix()`(stdlib-only)
+  - **契約變更**:`batch_disjoint=True` 從「保證全 pairwise disjoint」改為「leading prefix disjoint + 後段允許共號」 — 兩 picker test 同步改用 prefix 驗證
+  - **實測**(user case):大樂透 history=577 期、排除 [1,6,8,9]、num_tickets=10、seed=42 → **產出 10/10**(前 3 注 disjoint + 後 7 注共號)
+  - 199 unit tests 全綠(197 → +2,新增 phase2_fallback 各一)、pyflakes 0、`check_constitution` 7/7 PASS
+
 ## 尾數排除 UI 三件套(主畫面同步 + pills + slider 方向指引)(v6.11)
 - [x] **使用者回報「手動排除無法移除自動的、自動太嚴苛、想要點擊按鈕」根因修復**  ✅ 2026-06-23
   - 三個根因互相獨立、一個 PR 同批解
