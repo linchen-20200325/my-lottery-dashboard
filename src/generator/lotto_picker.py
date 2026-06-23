@@ -48,6 +48,25 @@ MIN_PRIME_COUNT = 1
 MAX_PRIME_COUNT = 3
 MAX_CONSECUTIVE_PAIRS = 2
 
+# v6.16 Howard #4 字頭追蹤(Decade Tracking)
+# Source: Gail Howard, "Lottery Master Guide"
+# 實測 577 期大樂透歷史命中率 87.0%(2026-06-23 sanity check):
+# 至少 1 個字頭區間完全空(無號碼)是強統計事實 → 設為硬濾網。
+# 威力彩 6/38 同規則僅 54.1% 命中 → §1 Fail Loud 拒用弱訊號當硬規則,只大樂透啟用。
+DECADE_BANDS: tuple[frozenset[int], ...] = (
+    frozenset(range(1, 10)),    # 單字頭 1-9
+    frozenset(range(10, 20)),   # 一字頭
+    frozenset(range(20, 30)),   # 二字頭
+    frozenset(range(30, 40)),   # 三字頭
+    frozenset(range(40, 50)),   # 四字頭
+)
+MIN_EMPTY_DECADES = 1
+
+# v6.16 Howard #11 谷底陷阱(Bottom of the Barrel)
+# 極冷號定義重用 engine `analysis.cold`(動態 μ + 1.5σ),不引入新 magic number。
+# 實測 577 期大樂透命中率 85.8% ≤ 1 顆 cold(2026-06-23 sanity check)。
+MAX_BASEMENT_PER_TICKET = 1
+
 
 # --- Validation helpers -------------------------------------------------------
 
@@ -89,8 +108,13 @@ def _passes_filters(
     s_hi: int,
     *,
     apply_secondary: bool,
+    basement_set: frozenset[int] = frozenset(),
 ) -> bool:
-    """Apply the v5.0 §6 五大濾網. `apply_secondary=False` ⇒ sum-only (Round 3 fallback)."""
+    """Apply v6.16 七大濾網 (Howard #4 + #11 加入).
+
+    `apply_secondary=False` ⇒ sum-only (Round 3 fallback);所有次要濾網
+    (奇偶/大小/質數/連號/字頭/谷底)全部關閉。
+    """
     if not (s_lo <= sum(ticket) <= s_hi):
         return False
     if not apply_secondary:
@@ -108,6 +132,14 @@ def _passes_filters(
     )
     if consecutive_pairs > MAX_CONSECUTIVE_PAIRS:
         return False
+    # v6.16 Howard #4: 至少 MIN_EMPTY_DECADES 個字頭區間完全空
+    ticket_set = frozenset(ticket)
+    empty = sum(1 for band in DECADE_BANDS if not (band & ticket_set))
+    if empty < MIN_EMPTY_DECADES:
+        return False
+    # v6.16 Howard #11 谷底陷阱: ticket ∩ cold 顆數 ≤ MAX_BASEMENT_PER_TICKET
+    if basement_set and sum(1 for n in ticket if n in basement_set) > MAX_BASEMENT_PER_TICKET:
+        return False
     return True
 
 
@@ -119,6 +151,7 @@ def _generate_batch_disjoint(
     s_hi: int,
     num_tickets: int,
     rng: random.Random,
+    basement_set: frozenset[int] = frozenset(),
 ) -> list[tuple[int, ...]]:
     """批次覆蓋模式(v6.15):嚴格 pair-disjoint + 均衡硬上限。
 
@@ -166,7 +199,10 @@ def _generate_batch_disjoint(
                 continue
             if any(usage[n] >= max_per_number for n in ticket):
                 continue  # v6.15 均衡硬上限
-            if not _passes_filters(ticket, sub_lo, sub_hi, apply_secondary=apply_full):
+            if not _passes_filters(
+                ticket, sub_lo, sub_hi,
+                apply_secondary=apply_full, basement_set=basement_set,
+            ):
                 continue
             new_pairs = set(combinations(ticket, 2))
             if new_pairs & used_pairs:  # 嚴格 pair-disjoint: 任一共 pair 即拒
@@ -311,6 +347,9 @@ def generate_tickets(
     else:
         s_lo, s_hi = analysis.sum_min_dynamic, analysis.sum_max_dynamic
 
+    # v6.16 Howard #11 谷底陷阱:極冷號集合來自 engine analysis.cold
+    basement_set = frozenset(analysis.cold)
+
     # --- Batch-disjoint branch ---
     if batch_disjoint:
         # Strict batch mode: disable keys entirely so all 6 numbers are
@@ -323,6 +362,7 @@ def generate_tickets(
             s_hi=s_hi,
             num_tickets=num_tickets,
             rng=rng,
+            basement_set=basement_set,
         )
         # §4.2 不變量斷言（與 main return 同規格）
         for t in tickets:
@@ -342,7 +382,10 @@ def generate_tickets(
         ticket = tuple(sorted(key_set.union(combo)))
         if ticket in seen:
             continue
-        if not _passes_filters(ticket, s_lo, s_hi, apply_secondary=True):
+        if not _passes_filters(
+            ticket, s_lo, s_hi,
+            apply_secondary=True, basement_set=basement_set,
+        ):
             continue
         results.append(ticket)
         seen.add(ticket)
@@ -380,7 +423,10 @@ def generate_tickets(
                     ticket = tuple(sorted(combo))
                     if ticket in seen:
                         continue
-                    if not _passes_filters(ticket, sub_lo, sub_hi, apply_secondary=apply_full):
+                    if not _passes_filters(
+                        ticket, sub_lo, sub_hi,
+                        apply_secondary=apply_full, basement_set=basement_set,
+                    ):
                         continue
                     results.append(ticket)
                     seen.add(ticket)
