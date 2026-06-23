@@ -7,9 +7,12 @@ from src.generator.history_engine import HistoryAnalysis
 from src.generator.lotto_picker import (
     ALLOWED_ODD_COUNTS,
     BIG_THRESHOLD,
+    DECADE_BANDS,
+    MAX_BASEMENT_PER_TICKET,
     MAX_CONSECUTIVE_PAIRS,
     MAX_PRIME_COUNT,
     MIN_BIG_COUNT,
+    MIN_EMPTY_DECADES,
     MIN_PRIME_COUNT,
     PRIMES_SET,
     SUM_MAX,
@@ -430,6 +433,120 @@ class TestStats(unittest.TestCase):
     def test_stats_no_consecutive(self):
         s = ticket_stats([2, 8, 14, 20, 26, 32])
         self.assertEqual(s["consecutive_pairs"], 0)
+
+
+class TestHowardFilters(unittest.TestCase):
+    """v6.16: Howard #4 字頭追蹤 + #11 谷底陷阱 雙濾網。"""
+
+    def test_decade_filter_rejects_all_decades_filled(self):
+        # 構造 5 decade 全有號的 ticket: (5, 15, 25, 35, 45) + 1 fill
+        # 應被字頭濾網拒絕(empty_decades = 0 < MIN_EMPTY_DECADES = 1)
+        from src.generator.lotto_picker import _passes_filters
+        ticket = (3, 15, 25, 35, 41, 47)  # 5/10/20/30/40 字頭全有
+        ts = frozenset(ticket)
+        empty = sum(1 for band in DECADE_BANDS if not (band & ts))
+        self.assertEqual(empty, 0, "test setup: ticket should have 0 empty decades")
+        # 通過其他濾網但字頭濾網要擋下(此例 sum=164、odd=4、big=4、prime=4 → 質數超 3)
+        # 改用 sum=124 的 case 避開其他濾網
+        ticket = (1, 13, 22, 31, 42, 49)  # all 5 decades filled, sum=158
+        ts = frozenset(ticket)
+        self.assertEqual(
+            sum(1 for band in DECADE_BANDS if not (band & ts)),
+            0, "test setup: 5 decade 全填",
+        )
+        self.assertFalse(
+            _passes_filters(
+                tuple(sorted(ticket)), 90, 210,
+                apply_secondary=True, basement_set=frozenset(),
+            ),
+            "v6.16 字頭濾網應拒絕 5 decade 全填的 ticket",
+        )
+
+    def test_decade_filter_accepts_one_empty_decade(self):
+        # (4, 12, 22, 41, 43, 48): 30 字頭空 → 通過字頭濾網
+        # 同時滿足:sum=170、odd=2、big=3(41/43/48)、prime=2(41/43)、consec=0
+        from src.generator.lotto_picker import _passes_filters
+        ticket = (4, 12, 22, 41, 43, 48)
+        ts = frozenset(ticket)
+        self.assertGreaterEqual(
+            sum(1 for band in DECADE_BANDS if not (band & ts)),
+            MIN_EMPTY_DECADES,
+        )
+        self.assertTrue(
+            _passes_filters(
+                ticket, 90, 210,
+                apply_secondary=True, basement_set=frozenset(),
+            ),
+        )
+
+    def test_basement_filter_rejects_two_cold(self):
+        # 谷底陷阱:ticket 含 2 顆 cold → 拒絕
+        # 滿足其他濾網的「2 顆 cold」case:
+        #   (4, 12, 22, 41, 45, 48):41/45 都在 cold;sum=172、odd=2、big=3、prime=1
+        from src.generator.lotto_picker import _passes_filters
+        ticket = (4, 12, 22, 41, 45, 48)
+        basement = frozenset([5, 15, 24, 41, 45])
+        cold_in_ticket = sum(1 for n in ticket if n in basement)
+        self.assertEqual(cold_in_ticket, 2, "test setup")
+        self.assertFalse(
+            _passes_filters(
+                ticket, 90, 210,
+                apply_secondary=True, basement_set=basement,
+            ),
+            f"v6.16 谷底陷阱應拒絕 {cold_in_ticket} > {MAX_BASEMENT_PER_TICKET}",
+        )
+
+    def test_basement_filter_accepts_one_cold(self):
+        # (4, 12, 22, 41, 43, 48) 只有 41 是 cold → 通過
+        from src.generator.lotto_picker import _passes_filters
+        ticket = (4, 12, 22, 41, 43, 48)
+        basement = frozenset([5, 15, 24, 41, 45])
+        cold_in_ticket = sum(1 for n in ticket if n in basement)
+        self.assertEqual(cold_in_ticket, 1, "test setup")
+        self.assertTrue(
+            _passes_filters(
+                ticket, 90, 210,
+                apply_secondary=True, basement_set=basement,
+            ),
+        )
+
+    def test_apply_secondary_false_bypasses_decade_and_basement(self):
+        # sub-C fallback: 所有次要濾網都關 → 字頭/谷底也不檢查
+        from src.generator.lotto_picker import _passes_filters
+        ticket = (1, 13, 22, 31, 42, 49)  # 5 decade 全填(會被 #4 擋)
+        self.assertTrue(
+            _passes_filters(
+                ticket, 21, 49 * 6,
+                apply_secondary=False, basement_set=frozenset(),
+            ),
+            "apply_secondary=False 應該繞過字頭濾網",
+        )
+
+    def test_real_history_pipeline_v6_16(self):
+        # 端到端:用真實 30 期歷史 + Howard 濾網 → tickets 全符合
+        analysis = _custom_analysis(auto_keys=[], sum_lo=120, sum_hi=180)
+        # 故意把 cold 設為 [5, 15],模擬 engine 輸出
+        from dataclasses import replace
+        analysis = replace(analysis, cold=[5, 15])
+        tickets, _ = generate_tickets(
+            history_draws=HISTORY,
+            num_tickets=5,
+            precomputed_analysis=analysis,
+            rng=random.Random(2026),
+        )
+        cold = frozenset([5, 15])
+        for t in tickets:
+            ts = frozenset(t)
+            empty = sum(1 for band in DECADE_BANDS if not (band & ts))
+            basement = sum(1 for n in t if n in cold)
+            self.assertGreaterEqual(
+                empty, MIN_EMPTY_DECADES,
+                f"v6.16 字頭濾網漏:{t} 全字頭都有號",
+            )
+            self.assertLessEqual(
+                basement, MAX_BASEMENT_PER_TICKET,
+                f"v6.16 谷底陷阱漏:{t} 有 {basement} 顆 cold",
+            )
 
 
 if __name__ == "__main__":

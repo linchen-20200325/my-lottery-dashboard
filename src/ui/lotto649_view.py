@@ -32,9 +32,11 @@ from src.generator.history_engine import (
 from src.generator.lotto_picker import (
     ALLOWED_ODD_COUNTS,
     BIG_THRESHOLD,
+    MAX_BASEMENT_PER_TICKET,
     MAX_CONSECUTIVE_PAIRS,
     MAX_PRIME_COUNT,
     MIN_BIG_COUNT,
+    MIN_EMPTY_DECADES,
     MIN_PRIME_COUNT,
     SUM_MAX,
     SUM_MIN,
@@ -294,7 +296,7 @@ def render(sample_csv_path: Path) -> None:
             key="l649_go",
         )
 
-    with st.expander("📐 大樂透 五大濾網規則"):
+    with st.expander("📐 大樂透 七大濾網規則(v6.16 加入 Howard #4 + #11)"):
         st.markdown(
             f"""
 - **質數**：`{MIN_PRIME_COUNT} ≤ 質數 ≤ {MAX_PRIME_COUNT}`（質數集 {{2,3,5,7,11,13,17,19,23,29,31,37,41,43,47}}）
@@ -302,6 +304,8 @@ def render(sample_csv_path: Path) -> None:
 - **動態和值**：`Phase 1 計算區間` (失敗回 `{SUM_MIN}-{SUM_MAX}`)
 - **奇偶**：`奇數 ∈ {sorted(ALLOWED_ODD_COUNTS)}`
 - **大數**：`> {BIG_THRESHOLD} 至少 {MIN_BIG_COUNT} 個`
+- **字頭追蹤**(Howard #4):`至少 {MIN_EMPTY_DECADES} 個字頭區間完全空`(實測 577 期歷史命中 87.0%)
+- **谷底陷阱**(Howard #11):`極冷號(engine cold list) ≤ {MAX_BASEMENT_PER_TICKET} 顆`(實測命中 85.8%)
 """
         )
 
@@ -511,7 +515,7 @@ def render(sample_csv_path: Path) -> None:
             )
         else:
             st.warning(
-                "通過五大濾網的組合為 0；Round 2 disjoint fallback 亦無解。"
+                "通過七大濾網的組合為 0；Round 2 disjoint fallback 亦無解。"
                 "請放寬閾值或縮少手動限制再試。"
             )
         return

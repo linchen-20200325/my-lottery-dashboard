@@ -116,6 +116,25 @@ my-lottery-2026/
   - 新測試：`tests/test_review_findings.py` 14 個 cases — 3 個風險各帶 raise 路徑 + 兼容性正例
   - 驗證：144 unit tests 全綠（134 → 144，+10）；既有引擎/scraper/UI 零退化
 
+## Howard 兩條濾網(#4 字頭追蹤 + #11 谷底陷阱)(v6.16,只大樂透)
+- [x] **使用者要求補 Gail Howard 策略**  ✅ 2026-06-23
+  - 觸發:user 拋出 Howard 完整 12 條策略清單;對比現狀後得出 3 條已實作 / 2 條半實作 / 7 條未實作
+  - **實測驗證**(sanity check 真實 577 期 lotto + 569 期 powerball):
+    | 規則 | 大樂透 | 威力彩 |
+    |---|---|---|
+    | #4 至少 1 個 decade 空 | **87.0%** ✓ | 54.1% ⚠️ |
+    | #11 ≤ 1 顆 cold | **85.8%** ✓ | 71.5% ⚠️ |
+  - **設計決定**(對齊 §1 Fail Loud):**大樂透加 #4 + #11,威力彩跳過** — 威力彩池小(4 decade、其中 30-38 只有 9 號)導致 #4 命中率僅 54.1%,用弱訊號當硬規則 = 偽造訊號強度,違憲
+  - **實作**:
+    - `lotto_picker.py` 加 `DECADE_BANDS`(5 個 frozenset)+ `MIN_EMPTY_DECADES=1` + `MAX_BASEMENT_PER_TICKET=1`,常數附 Howard 書出處 + 實測命中率 provenance 註解
+    - `_passes_filters()` 加 `basement_set: frozenset[int]` 參數(default 空集 = 退化為 v6.15);新增 2 個次要濾網檢查(字頭 + 谷底),受 `apply_secondary=False` 控管,sub-C fallback 全關
+    - 三個 call sites(standard / round 2 / batch_disjoint)同步傳 `basement_set=frozenset(analysis.cold)`
+    - `_generate_batch_disjoint()` 簽名加 `basement_set` 參數
+    - UI expander 從「五大濾網規則」改名「七大濾網規則(v6.16 加入 Howard #4 + #11)」+ 列出兩條新規則 + 實測命中率展示
+  - **新增 6 unit tests**(`TestHowardFilters`):decade reject/accept、basement reject/accept、sub-C bypass、real history pipeline
+  - **威力彩**:`powerball_picker.py` 不動 — 沿用 v6.15 五大濾網
+  - 207 tests 全綠(201 → +6)、pyflakes 0、`check_constitution` 7/7 PASS
+
 ## 批次模式加號碼出現次數均衡硬上限(v6.15)
 - [x] **使用者要求「不能某個號碼出現比較多次,平均、可以誤差 1 到 2 碼」**  ✅ 2026-06-23
   - 觸發:v6.13 pair-disjoint 雖然不重複,但某號可能 0 次、某號 5 次以上,違反「均勻覆蓋」直覺
