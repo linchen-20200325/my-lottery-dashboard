@@ -582,28 +582,20 @@ def render(sample_csv_path: Path) -> None:
     except ValueError:
         pass
 
-    col_left, col_right = st.columns([3, 2])
-
-    with col_left:
-        st.subheader("🎟️ 推薦組合")
-        for idx, ticket in enumerate(tickets, start=1):
-            nums_str = "   ".join(f"`{n:02d}`" for n in ticket)
-            st.markdown(f"**第 {idx} 注**:{nums_str}")
-
-    with col_right:
-        st.subheader("📊 每注診斷")
-        header = (
-            "| # | sum | odd | big | prime | consec |\n"
-            "|---|---|---|---|---|---|\n"
+    st.subheader("🎟️ 推薦組合 + 每注診斷")
+    header = (
+        f"| # | 號碼 | 和 | 奇 | >{BIG_THRESHOLD} | 質 | 連 |\n"
+        "|---|---|---|---|---|---|---|\n"
+    )
+    rows = []
+    for idx, ticket in enumerate(tickets, start=1):
+        s = ticket_stats(ticket)
+        nums_str = " ".join(f"`{n:02d}`" for n in ticket)
+        rows.append(
+            f"| {idx} | {nums_str} | {s['sum']} | {s['odd_count']} "
+            f"| {s['big_count']} | {s['prime_count']} | {s['consecutive_pairs']} |"
         )
-        rows = []
-        for idx, ticket in enumerate(tickets, start=1):
-            s = ticket_stats(ticket)
-            rows.append(
-                f"| {idx} | {s['sum']} | {s['odd_count']} | {s['big_count']} "
-                f"| {s['prime_count']} | {s['consecutive_pairs']} |"
-            )
-        st.markdown(header + "\n".join(rows))
+    st.markdown(header + "\n".join(rows))
 
     st.caption(
         "提醒：本工具僅為數學優化器，無法改變獨立隨機事件之期望值；理性投注。"
