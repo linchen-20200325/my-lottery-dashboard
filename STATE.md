@@ -116,6 +116,18 @@ my-lottery-2026/
   - 新測試：`tests/test_review_findings.py` 14 個 cases — 3 個風險各帶 raise 路徑 + 兼容性正例
   - 驗證：144 unit tests 全綠（134 → 144，+10）；既有引擎/scraper/UI 零退化
 
+## 尾數排除 UI 三件套(主畫面同步 + pills + slider 方向指引)(v6.11)
+- [x] **使用者回報「手動排除無法移除自動的、自動太嚴苛、想要點擊按鈕」根因修復**  ✅ 2026-06-23
+  - 三個根因互相獨立、一個 PR 同批解
+  - **根因 1(視覺誤導)**:picker 端早就正確接受空 list 當作「真清空」,但主畫面「排除尾數」card 永遠顯示 `analysis.exclude_tails`(動態值)、不反映手動覆寫;user 以為自己「手動 + 空多選」沒生效
+  - **根因 2(隱藏功能)**:`overheat_recent / overheat_min / dormant_periods` 三個 slider **本來就有**,但 user 不知道「拉高 = 排除少 / 拉低 = 排除多」,沒人教
+  - **根因 3(UX 不一致)**:「手動排除尾數」用 `multiselect` dropdown,但下方「排除特定號碼」用 `st.pills` 按鈕 — 不一致
+  - **修法 1**:兩 view 主畫面「排除尾數」改顯示**實際生效值** — 手動模式秀 `manual_excluded_tails`、動態秀 `analysis.exclude_tails`;caption 加「來源:動態/手動」標籤
+  - **修法 2**:「🎚️ 尾數訊號」section 上方加 caption「↗ 拉高 = 自動排除少 / ↘ 拉低 = 自動排除多」+ 三 slider 各加 `help` tooltip 教方向(過熱判定次數 4-6 = 排除少 / 2-3 = 排除多;死寂判定期 12-20 = 排除少 / 5-8 = 排除多)
+  - **修法 3**:`manual_excluded_tails` 從 `multiselect` 換 `st.pills(0..9, selection_mode="multi")`,UX 跟「排除特定號碼」一致;舊 streamlit 沒 `pills` fallback 給 multiselect
+  - **不動 default**:v6.10 改的 `overheat_min_count=3 / dormant_periods=8` 維持(避免下次又翻案),想嚴格的 user 自己拉滿即可
+  - 197 unit tests 全綠(無新增 case — 純 UI/顯示層改動,picker / engine 契約未動)
+
 ## Hotfix:revert v6.9 A4 版本鎖 (v6.10.1)
 - [x] **Streamlit Cloud 安裝失敗緊急 revert**  ✅ 2026-06-22
   - 觸發:使用者回報 Streamlit Cloud 顯示 `Error installing requirements.`
