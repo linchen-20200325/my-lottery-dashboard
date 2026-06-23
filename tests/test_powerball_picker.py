@@ -156,6 +156,24 @@ def _assert_pair_disjoint(test, tickets):
             used.add(pair)
 
 
+def _assert_usage_balanced(test, tickets, pool_size):
+    """v6.15 契約:每號出現次數 ≤ ⌈6N/P⌉ + 1。"""
+    import math
+    from collections import Counter
+    if not tickets:
+        return
+    cap = math.ceil(6 * len(tickets) / pool_size) + 1
+    usage = Counter()
+    for t in tickets:
+        usage.update(t)
+    over = {n: c for n, c in usage.items() if c > cap}
+    test.assertFalse(
+        over,
+        f"v6.15 均衡上限被違反:cap={cap} 但 {over} 超出 "
+        f"(N={len(tickets)} tickets, P={pool_size} pool)",
+    )
+
+
 class TestBatchDisjoint(unittest.TestCase):
     """批次推薦模式 (v6.13):嚴格 pair-disjoint。"""
 
@@ -199,6 +217,19 @@ class TestBatchDisjoint(unittest.TestCase):
             self.assertTrue(all(1 <= n <= 38 for n in t))
         self.assertEqual(len(set(tickets)), len(tickets), "no exact duplicate tickets")
         _assert_pair_disjoint(self, tickets)
+        # v6.15:排除尾數 [1,6,8,9] 對 38 池 → 剩 30 顆(尾 1/6/8/9 各 3~4 顆)
+        # 實際池大小由 38 − 排除尾數佔位數決定;這裡留鬆綁,測 base case
+        _assert_usage_balanced(self, tickets, pool_size=30)
+
+    def test_v6_15_usage_cap_full_pool(self):
+        # v6.15:全池 38 顆 + 8 注 → ⌈48/38⌉ + 1 = 3,每號最多 3 次
+        tickets, _, _ = generate_tickets(
+            _synthetic_draws(), _synthetic_specials(),
+            num_tickets=8, manual_keys=None,
+            batch_disjoint=True, rng=random.Random(42),
+        )
+        _assert_pair_disjoint(self, tickets)
+        _assert_usage_balanced(self, tickets, pool_size=38)
 
 
 if __name__ == "__main__":

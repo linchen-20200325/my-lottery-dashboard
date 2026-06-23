@@ -495,32 +495,35 @@ def render(sample_csv_path: Path) -> None:
         return
 
     # v6.13: 嚴格 pair-disjoint — 任意 2 顆配對在所有注中至多出現一次
+    # v6.15: 均衡硬上限 — 每號出現次數 ≤ ⌈6N/P⌉ + 1
     if batch_disjoint and len(tickets) < num_tickets:
         st.warning(
             f"🧩 批次不重複模式:已產出 **{len(tickets)} / {num_tickets}** 注 · "
-            f"第二區 ⚡`{bonus_pick}` — 濾網/池太緊,任意 2 顆配對只允許出現一次的規則下"
-            "湊不到目標。請放寬尾數排除、減少注數,或在「🎚️ 尾數訊號」section 把判定門檻拉高。"
+            f"第二區 ⚡`{bonus_pick}` — 濾網/池太緊,「pair 不重複 + 號碼出現次數均衡」"
+            "的雙約束下湊不到目標。請放寬尾數排除、減少注數,或在「🎚️ 尾數訊號」"
+            "section 把判定門檻拉高。"
         )
     elif batch_disjoint:
         st.success(
             f"✅ 產出 {len(tickets)} 注 · 第二區 ⚡`{bonus_pick}` · "
-            "🧩 任意 2 顆配對在所有注中至多出現一次"
+            "🧩 pair 不重複 + 號碼出現次數均衡"
         )
     else:
         st.subheader(f"✅ 產出 {len(tickets)} 注 · 第二區 ⚡`{bonus_pick}`")
 
+    header = (
+        f"| # | 號碼 | ⚡ | 和 | 奇 | >{BIG_THRESHOLD} | 質 |\n"
+        "|---|---|---|---|---|---|---|\n"
+    )
+    rows = []
     for i, t in enumerate(tickets, 1):
-        stats = ticket_stats(t)
-        cols = st.columns([3, 1, 1, 1, 1])
-        cols[0].markdown(
-            f"**第 {i} 注**　"
-            + " ".join(f"`{n:02d}`" for n in t)
-            + f"　⚡`{bonus_pick}`"
+        s = ticket_stats(t)
+        nums_str = " ".join(f"`{n:02d}`" for n in t)
+        rows.append(
+            f"| {i} | {nums_str} | ⚡`{bonus_pick}` "
+            f"| {s['sum']} | {s['odd_count']} | {s['big_count']} | {s['prime_count']} |"
         )
-        cols[1].metric("和", stats["sum"])
-        cols[2].metric("奇", stats["odd_count"])
-        cols[3].metric(f">{BIG_THRESHOLD}", stats["big_count"])
-        cols[4].metric("質", stats["prime_count"])
+    st.markdown(header + "\n".join(rows))
 
     st.caption(
         "提醒：本工具僅為數學優化器，無法改變獨立隨機事件之期望值；理性投注。"

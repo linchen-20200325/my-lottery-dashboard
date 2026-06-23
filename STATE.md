@@ -116,6 +116,30 @@ my-lottery-2026/
   - 新測試：`tests/test_review_findings.py` 14 個 cases — 3 個風險各帶 raise 路徑 + 兼容性正例
   - 驗證：144 unit tests 全綠（134 → 144，+10）；既有引擎/scraper/UI 零退化
 
+## 批次模式加號碼出現次數均衡硬上限(v6.15)
+- [x] **使用者要求「不能某個號碼出現比較多次,平均、可以誤差 1 到 2 碼」**  ✅ 2026-06-23
+  - 觸發:v6.13 pair-disjoint 雖然不重複,但某號可能 0 次、某號 5 次以上,違反「均勻覆蓋」直覺
+  - 數學:N 注 × 6 顆 = 6N 號碼槽;有效池 P → 理想平均 6N/P 次/號;pair-disjoint 隱含上限 ⌊(P−1)/5⌋(大樂透 9、威力彩 7)但底板無保護
+  - **修法**:兩 picker `_generate_batch_disjoint()` 加 `Counter` 追蹤每號使用次數;候選 ticket 若含已達 `cap = ⌈6N/P⌉ + 1` 次的號碼直接 reject;與 pair-disjoint 並列為合格性檢查(放在 pair-disjoint 之前因 6 次 dict lookup 比 C(6,2)=15 pair 比對快)
+  - **容差設計**:`+1` 對應 user 明示的「誤差 1 到 2 碼」容差(理想平均 + 1);太緊(無 +1)會大幅降低湊到目標注數的能力
+  - **實測**(user case 大樂透、history=577 期、排除 [1,6,8,9]、num_tickets=10、seed=42):
+    - 產出 10/10 注,全 29 顆號碼**每號都被用到**(0 次的號歸零)
+    - cap = ⌈60/29⌉+1 = 4;實測 max=4 / min=1,鐘形分佈(6 號 1 次、16 號 2 次、6 號 3 次、1 號 4 次)
+  - **契約**:`batch_disjoint=True` 沿用 v6.13「湊不到 return 少注 + warn」;新增「pair 不重複 + 號碼出現次數均衡」雙約束
+  - **UI**:兩 view 的 warning/success message 更新成「pair 不重複 + 號碼出現次數均衡」
+  - 新增 2 個 unit test(`test_v6_15_usage_cap_full_pool` 兩 picker 各一)+ 既有 disjoint 測試擴充均衡斷言,共 201 tests 全綠、pyflakes 0、`check_constitution` 7/7 PASS
+
+## 雙樂透主畫面改全寬總表(v6.14)
+- [x] **使用者回報「手機端每注吃滿一屏」**  ✅ 2026-06-23
+  - 觸發:截圖顯示威力彩 `第1注 / 和 106 / 奇 2 / >19 3 / 質 2` 在手機上縱向疊滿一屏 — 10 注要捲超久
+  - 根因 1(威力彩):`powerball_view.py` 用 `st.columns([3,1,1,1,1]) + st.metric` 逐注排版;Streamlit metric 卡片在窄屏會強制換行,5 欄變 5 列
+  - 根因 2(大樂透):`lotto649_view.py` 用 `st.columns([3,2])` 雙欄總表;手機窄屏一樣會疊,且「推薦組合」與「每注診斷」分離,要在兩塊區之間左右掃視才能對到每注的指標
+  - **修法**:
+    - 威力彩 `powerball_view.py:512-523` 改為單一全寬 markdown 表 — 號碼 + ⚡ + 4 指標(和/奇/>19/質)
+    - 大樂透 `lotto649_view.py:585-606` 從雙欄合併為單一全寬表 — 號碼 + 5 指標(和/奇/>大 31/質/連)
+    - 雙樂透統一視覺:號碼置左 + 指標右排,10 注 = 10 列
+  - **影響**:純 UI 渲染變更,引擎/濾網/憲法不動;199 unit tests 全綠、pyflakes 0、`check_constitution` 7/7 PASS
+
 ## 批次不重複模式改 pair-disjoint(v6.13)
 - [x] **使用者澄清「組合不重複」= 任意 2 顆 pair 不重複**  ✅ 2026-06-23
   - 觸發:v6.12 上線後 user 回報「#4 vs #1 共 4 顆 = 算重複」— 跟我以為的「整 6 顆 tuple 唯一」不一樣

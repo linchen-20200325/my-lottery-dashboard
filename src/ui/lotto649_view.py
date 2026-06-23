@@ -519,16 +519,17 @@ def render(sample_csv_path: Path) -> None:
     _skip_legacy_split = False
     if batch_disjoint:
         # v6.13: 嚴格 pair-disjoint — 任意 2 顆配對在所有注中至多出現一次
+        # v6.15: 均衡硬上限 — 每號出現次數 ≤ ⌈6N/P⌉ + 1
         if len(tickets) < num_tickets:
             st.warning(
                 f"🧩 批次不重複模式:已產出 **{len(tickets)} / {num_tickets}** 注 — "
-                "濾網/池太緊,任意 2 顆配對只允許出現一次的規則下湊不到目標。"
+                "濾網/池太緊,「pair 不重複 + 號碼出現次數均衡」的雙約束下湊不到目標。"
                 "請放寬尾數排除、減少注數,或在「🎚️ 尾數訊號」section 把判定門檻拉高(降低排除)。"
             )
         else:
             st.success(
                 f"🧩 批次不重複模式:已產出 {len(tickets)} 注,"
-                "任意 2 顆配對在所有注中至多出現一次"
+                "pair 不重複 + 號碼出現次數均衡"
             )
         _skip_legacy_split = True
 
@@ -582,28 +583,20 @@ def render(sample_csv_path: Path) -> None:
     except ValueError:
         pass
 
-    col_left, col_right = st.columns([3, 2])
-
-    with col_left:
-        st.subheader("🎟️ 推薦組合")
-        for idx, ticket in enumerate(tickets, start=1):
-            nums_str = "   ".join(f"`{n:02d}`" for n in ticket)
-            st.markdown(f"**第 {idx} 注**:{nums_str}")
-
-    with col_right:
-        st.subheader("📊 每注診斷")
-        header = (
-            "| # | sum | odd | big | prime | consec |\n"
-            "|---|---|---|---|---|---|\n"
+    st.subheader("🎟️ 推薦組合 + 每注診斷")
+    header = (
+        f"| # | 號碼 | 和 | 奇 | >{BIG_THRESHOLD} | 質 | 連 |\n"
+        "|---|---|---|---|---|---|---|\n"
+    )
+    rows = []
+    for idx, ticket in enumerate(tickets, start=1):
+        s = ticket_stats(ticket)
+        nums_str = " ".join(f"`{n:02d}`" for n in ticket)
+        rows.append(
+            f"| {idx} | {nums_str} | {s['sum']} | {s['odd_count']} "
+            f"| {s['big_count']} | {s['prime_count']} | {s['consecutive_pairs']} |"
         )
-        rows = []
-        for idx, ticket in enumerate(tickets, start=1):
-            s = ticket_stats(ticket)
-            rows.append(
-                f"| {idx} | {s['sum']} | {s['odd_count']} | {s['big_count']} "
-                f"| {s['prime_count']} | {s['consecutive_pairs']} |"
-            )
-        st.markdown(header + "\n".join(rows))
+    st.markdown(header + "\n".join(rows))
 
     st.caption(
         "提醒：本工具僅為數學優化器，無法改變獨立隨機事件之期望值；理性投注。"
