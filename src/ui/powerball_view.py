@@ -176,14 +176,21 @@ def render(sample_csv_path: Path) -> None:
         )
 
         st.markdown("#### 🎚️ 尾數訊號")
+        st.caption(
+            "↗ **拉高 = 自動排除少**(條件變嚴格,較少尾數被列為過熱/死寂) ｜ "
+            "↘ **拉低 = 自動排除多**(條件變寬鬆,更多尾數被列入排除)"
+        )
         overheat_recent = st.slider(
             "過熱觀察期", 1, 10, DEFAULTS["overheat_recent_periods"], key="pb_oh_r",
+            help="觀察近 N 期的尾數出現次數。N 越小 → 越快反應近期熱點 → 越容易判過熱。",
         )
         overheat_min = st.slider(
             "過熱判定次數", 1, 10, DEFAULTS["overheat_min_count"], key="pb_oh_m",
+            help="觀察期內出現 ≥ N 次即判為過熱。**N 拉到 4-6 = 排除少**,N=2-3 = 排除多。",
         )
         dormant_periods = st.slider(
             "死寂判定期", 5, 30, DEFAULTS["dormant_periods"], key="pb_dorm",
+            help="連續 N 期未出現即判為死寂。**N 拉到 12-20 = 排除少**,N=5-8 = 排除多。",
         )
 
         st.markdown("#### 🎯 第一區膽碼 / 排除 (覆寫)")
@@ -204,12 +211,24 @@ def render(sample_csv_path: Path) -> None:
         )
         manual_excluded_tails: list[int] | None = None
         if tail_mode == "手動":
-            manual_excluded_tails = st.multiselect(
-                "手動排除尾數",
-                options=list(range(10)),
-                default=[],
-                key="pb_extails",
-            )
+            st.caption("點擊尾數 0-9 即可加入/移除排除清單;空 = 不排除任何尾數。")
+            if hasattr(st, "pills"):
+                manual_excluded_tails = st.pills(
+                    "手動排除尾數",
+                    options=list(range(10)),
+                    selection_mode="multi",
+                    default=[],
+                    label_visibility="collapsed",
+                    key="pb_extails_pills",
+                )
+            else:
+                manual_excluded_tails = st.multiselect(
+                    "手動排除尾數(升級 streamlit≥1.39 可享按鈕點選 UI)",
+                    options=list(range(10)),
+                    default=[],
+                    key="pb_extails",
+                )
+            manual_excluded_tails = list(manual_excluded_tails) if manual_excluded_tails else []
 
         st.markdown("##### 🚫 排除特定號碼 (1-38)")
         _key_set = set(manual_keys) if manual_keys else set()
@@ -394,19 +413,37 @@ def render(sample_csv_path: Path) -> None:
             f"**和值動態區間**：`{analysis.sum_min_dynamic} - {analysis.sum_max_dynamic}`"
             f"（SMA={analysis.sum_sma:.1f}）"
         )
-        # v6.10: 三項全空時改 explicit 訊息避免「—」被誤判為 bug
-        if analysis.exclude_tails:
-            st.markdown(
-                "**排除尾數**：" +
-                " ".join(f"`{t}`" for t in analysis.exclude_tails)
+        # v6.11: 改顯示「實際生效」的排除尾數 — 動態 = analysis、手動 = manual_excluded_tails。
+        # 避免「手動覆寫 → 主畫面仍顯示動態值」的視覺誤導。
+        if manual_excluded_tails is not None:
+            _effective_tails = sorted(set(manual_excluded_tails))
+            _source_label = "手動覆寫"
+            _detail = (
+                f"動態建議:{analysis.exclude_tails or '—'}"
             )
-            st.caption(
+        else:
+            _effective_tails = list(analysis.exclude_tails)
+            _source_label = "動態偵測"
+            _detail = (
                 f"過熱:{analysis.overheated_tails or '—'} · "
                 f"死寂:{analysis.dormant_tails or '—'}"
             )
+        if _effective_tails:
+            st.markdown(
+                "**排除尾數**:" +
+                " ".join(f"`{t}`" for t in _effective_tails)
+            )
+            st.caption(f"來源:{_source_label} · {_detail}")
         else:
             st.markdown("**排除尾數**:✓ 無")
-            st.caption("尾數分佈接近均勻、無極端訊號(可在側欄調低判定門檻)")
+            st.caption(
+                f"來源:{_source_label} · "
+                + (
+                    "(已清空 — 不排除任何尾數)"
+                    if manual_excluded_tails is not None
+                    else "尾數分佈均勻、無極端訊號(側欄可調低判定門檻)"
+                )
+            )
         st.markdown(
             "**自動雙膽**：" +
             (" ".join(f"`{n:02d}`" for n in analysis.auto_keys) or "—")
