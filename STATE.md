@@ -116,6 +116,20 @@ my-lottery-2026/
   - 新測試：`tests/test_review_findings.py` 14 個 cases — 3 個風險各帶 raise 路徑 + 兼容性正例
   - 驗證：144 unit tests 全綠（134 → 144，+10）；既有引擎/scraper/UI 零退化
 
+## 排除尾數展開成具體號碼 + 套用按鈕(v6.17)
+- [x] **使用者回報「系統移除的號碼看不到、想在號碼選項上呈現可加減」**  ✅ 2026-06-23
+  - 觸發:截圖顯示主畫面 card「排除尾數:[1, 6, 8, 9]」只列尾數,沒列出對應的具體 20 顆號碼;「排除特定號碼」按鈕區也預設空、使用者要自己手動選
+  - **修法**(兩 view 同步):
+    - 加 `_expand_tails_to_numbers(tails, lo, hi)` helper:`[1,6,8,9]` + `1-49` → 20 顆具體號碼
+    - 主畫面「排除尾數」card 下方新增:
+      - 💡 **系統建議排除這 N 顆**:`01` `06` `08` `09` `11` `16` ... 全列出
+      - 「📥 套用到排除特定號碼」按鈕:把 N 顆寫進 `st.session_state["{view}_excl_pills"]` + `st.rerun()` → 下次 render 自動填入排除清單按鈕區
+      - 「🧹 清空排除清單」按鈕:重置 pills
+      - caption 提示「套用後可在參數設定取消保留 / 額外加碼」
+  - **後端不動契約**:picker 仍接受 manual_excluded_numbers + manual_excluded_tails;套用按鈕只改 session_state 不改 picker 邏輯
+  - **威力彩**`MAIN_POOL_MAX=38` → 一樣展開,N=15(扣掉 4_/5_ 段不存在的 41/46/48/49 等)
+  - 純 UI 改動,引擎/濾網/憲法不動;207 unit tests 全綠、pyflakes 0、`check_constitution` 7/7 PASS
+
 ## Howard 兩條濾網(#4 字頭追蹤 + #11 谷底陷阱)(v6.16,只大樂透)
 - [x] **使用者要求補 Gail Howard 策略**  ✅ 2026-06-23
   - 觸發:user 拋出 Howard 完整 12 條策略清單;對比現狀後得出 3 條已實作 / 2 條半實作 / 7 條未實作
