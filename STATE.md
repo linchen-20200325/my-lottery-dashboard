@@ -116,6 +116,14 @@ my-lottery-2026/
   - 新測試：`tests/test_review_findings.py` 14 個 cases — 3 個風險各帶 raise 路徑 + 兼容性正例
   - 驗證：144 unit tests 全綠（134 → 144，+10）；既有引擎/scraper/UI 零退化
 
+## 威力彩主畫面改全寬總表(v6.14)
+- [x] **使用者回報「手機端每注吃滿一屏」**  ✅ 2026-06-23
+  - 觸發:截圖顯示 `第1注 / 和 106 / 奇 2 / >19 3 / 質 2` 在手機上縱向疊滿一屏 — 10 注要捲超久
+  - 根因:`powerball_view.py` 用 `st.columns([3,1,1,1,1]) + st.metric` 逐注排版;Streamlit metric 卡片在窄屏會強制換行,5 欄變 5 列
+  - **修法**:`powerball_view.py:512-523` 改為單一全寬 markdown 表 — 號碼 + ⚡ + 5 個診斷指標(和/奇/>19/質)全擠同一張表,10 注 = 10 列
+  - **影響**:純 UI 渲染變更,引擎/濾網/憲法不動;199 unit tests 全綠、pyflakes 0、`check_constitution` 7/7 PASS
+  - 大樂透 view 本來就是雙欄總表(`columns([3,2])` + markdown 表),保留(若 user 之後也要改成單表再同步)
+
 ## 批次不重複模式改 pair-disjoint(v6.13)
 - [x] **使用者澄清「組合不重複」= 任意 2 顆 pair 不重複**  ✅ 2026-06-23
   - 觸發:v6.12 上線後 user 回報「#4 vs #1 共 4 顆 = 算重複」— 跟我以為的「整 6 顆 tuple 唯一」不一樣

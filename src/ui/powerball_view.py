@@ -509,18 +509,19 @@ def render(sample_csv_path: Path) -> None:
     else:
         st.subheader(f"✅ 產出 {len(tickets)} 注 · 第二區 ⚡`{bonus_pick}`")
 
+    header = (
+        f"| # | 號碼 | ⚡ | 和 | 奇 | >{BIG_THRESHOLD} | 質 |\n"
+        "|---|---|---|---|---|---|---|\n"
+    )
+    rows = []
     for i, t in enumerate(tickets, 1):
-        stats = ticket_stats(t)
-        cols = st.columns([3, 1, 1, 1, 1])
-        cols[0].markdown(
-            f"**第 {i} 注**　"
-            + " ".join(f"`{n:02d}`" for n in t)
-            + f"　⚡`{bonus_pick}`"
+        s = ticket_stats(t)
+        nums_str = " ".join(f"`{n:02d}`" for n in t)
+        rows.append(
+            f"| {i} | {nums_str} | ⚡`{bonus_pick}` "
+            f"| {s['sum']} | {s['odd_count']} | {s['big_count']} | {s['prime_count']} |"
         )
-        cols[1].metric("和", stats["sum"])
-        cols[2].metric("奇", stats["odd_count"])
-        cols[3].metric(f">{BIG_THRESHOLD}", stats["big_count"])
-        cols[4].metric("質", stats["prime_count"])
+    st.markdown(header + "\n".join(rows))
 
     st.caption(
         "提醒：本工具僅為數學優化器，無法改變獨立隨機事件之期望值；理性投注。"
