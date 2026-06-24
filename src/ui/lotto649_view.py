@@ -216,12 +216,25 @@ def render(sample_csv_path: Path) -> None:
         )
         manual_keys: list[int] | None = None
         if key_mode == "手動":
-            manual_keys = st.multiselect(
-                "手動膽碼 (1-5 顆)",
-                options=list(range(POOL_MIN, POOL_MAX + 1)),
-                default=[7, 33],
-                key="l649_keys",
-            )
+            st.caption("點擊號碼 1-49 即可加入/移除手動膽碼清單(1-5 顆)。")
+            if hasattr(st, "pills"):
+                manual_keys = st.pills(
+                    "手動膽碼 (1-5 顆)",
+                    options=list(range(POOL_MIN, POOL_MAX + 1)),
+                    selection_mode="multi",
+                    default=[7, 33],
+                    format_func=lambda n: f"{n:02d}",
+                    label_visibility="collapsed",
+                    key="l649_keys_pills",
+                )
+            else:
+                manual_keys = st.multiselect(
+                    "手動膽碼 (1-5 顆)",
+                    options=list(range(POOL_MIN, POOL_MAX + 1)),
+                    default=[7, 33],
+                    key="l649_keys",
+                )
+            manual_keys = list(manual_keys) if manual_keys else []
 
         tail_mode = st.radio(
             "排除尾數", ["動態", "手動"], horizontal=True, key="l649_tailmode",
@@ -247,37 +260,115 @@ def render(sample_csv_path: Path) -> None:
                 )
             manual_excluded_tails = list(manual_excluded_tails) if manual_excluded_tails else []
 
-        st.markdown("##### 🚫 排除特定號碼")
-        st.caption("點擊號碼即可加入/移除排除清單；空 = 不排除任何號碼。")
+        # --- v6.18: 早期載入 history + analyze → seed「排除特定號碼」動態建議 ---
+        _early_history: list[list[int]] = []
+        _early_load_failed = False
+        try:
+            if source == "上傳 CSV / JSON" and uploaded_file is not None:
+                _early_history, _ = _load_upload(
+                    uploaded_file.getvalue(), uploaded_file.name,
+                )
+            elif source == "貼上文字" and pasted.strip():
+                if pasted.lstrip().startswith(("[", "{")):
+                    _early_history = load_json_string(pasted)
+                else:
+                    _early_history, _ = load_csv_string_with_provenance(
+                        pasted, source="<paste:csv>",
+                    )
+            elif source == "倉庫內附 (data/lotto649.csv)":
+                _early_history, _ = _load_bundled(str(sample_csv_path))
+        except (HistoryLoadError, OSError):
+            _early_load_failed = True
+
+        _early_analysis = STATIC_FALLBACK_ANALYSIS
+        if _early_history and not _early_load_failed:
+            try:
+                _early_analysis = cached_analysis(
+                    _early_history,
+                    hot_sigma, cold_sigma,
+                    sma_window, range_pad,
+                    overheat_recent, overheat_min, dormant_periods,
+                    0,
+                )
+            except Exception:  # noqa: BLE001 — seed 用,失敗就 fallback
+                pass
+
+        _effective_excluded_tails_for_seed = (
+            set(manual_excluded_tails)
+            if manual_excluded_tails is not None
+            else set(_early_analysis.exclude_tails)
+        )
+        _tail_expanded_for_seed = _expand_tails_to_numbers(
+            _effective_excluded_tails_for_seed, POOL_MIN, POOL_MAX,
+        )
         _key_set = set(manual_keys) if manual_keys else set()
+        _sys_recommended = sorted(
+            (set(_early_analysis.cold) | set(_tail_expanded_for_seed)) - _key_set
+        )
+
+        if (
+            not _early_analysis.is_fallback
+            and not st.session_state.get("l649_excl_seeded", False)
+        ):
+            st.session_state["l649_excl_pills"] = list(_sys_recommended)
+            st.session_state["l649_excl_multi"] = list(_sys_recommended)
+            st.session_state["l649_excl_seeded"] = True
+
+        st.markdown("##### 🚫 排除特定號碼")
+        if _sys_recommended:
+            st.caption(
+                f"💡 進場已自動填入系統建議 **{len(_sys_recommended)}** 顆"
+                f"(冷號 {len(_early_analysis.cold)} + 過熱尾數展開 "
+                f"{len(_tail_expanded_for_seed)}),點擊可加減。"
+            )
+        else:
+            st.caption("點擊號碼即可加入/移除排除清單;空 = 不排除任何號碼。")
         _excl_options = [n for n in range(POOL_MIN, POOL_MAX + 1) if n not in _key_set]
         if _key_set:
             st.caption(
-                f"（已自動隱藏手動膽碼 {sorted(_key_set)}，避免與排除清單衝突）"
+                f"(已自動隱藏手動膽碼 {sorted(_key_set)},避免與排除清單衝突)"
             )
         if hasattr(st, "pills"):
             manual_excluded_numbers = st.pills(
                 "點擊號碼",
                 options=_excl_options,
                 selection_mode="multi",
-                default=[],
                 format_func=lambda n: f"{n:02d}",
                 label_visibility="collapsed",
                 key="l649_excl_pills",
             )
         else:
             manual_excluded_numbers = st.multiselect(
-                "排除號碼（升級 streamlit≥1.39 可享按鈕點選 UI）",
+                "排除號碼(升級 streamlit≥1.39 可享按鈕點選 UI)",
                 options=_excl_options,
-                default=[],
                 format_func=lambda n: f"{n:02d}",
                 key="l649_excl_multi",
             )
         if manual_excluded_numbers:
             st.caption(
-                f"已排除 **{len(manual_excluded_numbers)}** 顆："
+                f"已排除 **{len(manual_excluded_numbers)}** 顆:"
                 + ", ".join(f"{n:02d}" for n in sorted(manual_excluded_numbers))
             )
+
+        _btn_col1, _btn_col2 = st.columns(2)
+        if _btn_col1.button(
+            "🔄 重設為系統建議",
+            key="l649_reset_excl",
+            use_container_width=True,
+            help=f"重設為系統建議的 {len(_sys_recommended)} 顆排除清單",
+        ):
+            st.session_state["l649_excl_pills"] = list(_sys_recommended)
+            st.session_state["l649_excl_multi"] = list(_sys_recommended)
+            st.rerun()
+        if _btn_col2.button(
+            "🧹 全清空",
+            key="l649_clear_excl",
+            use_container_width=True,
+            help="清空排除特定號碼清單",
+        ):
+            st.session_state["l649_excl_pills"] = []
+            st.session_state["l649_excl_multi"] = []
+            st.rerun()
 
         sum_mode = st.radio(
             "和值區間", ["動態 SMA", "手動"], horizontal=True, key="l649_summode",
@@ -290,7 +381,17 @@ def render(sample_csv_path: Path) -> None:
             manual_sum_range = (s_lo, s_hi)
 
         st.markdown("#### ⚙️ 產出")
-        num_tickets = st.slider("注數", 1, 50, 5, key="l649_num")
+        if hasattr(st, "pills"):
+            _num_choice = st.pills(
+                "注數",
+                options=[1, 5, 10, 15, 20, 30, 50],
+                selection_mode="single",
+                default=5,
+                key="l649_num_pills",
+            )
+            num_tickets = int(_num_choice) if _num_choice else 5
+        else:
+            num_tickets = st.slider("注數", 1, 50, 5, key="l649_num")
 
         batch_disjoint = st.checkbox(
             "🧩 批次推薦：注間號碼完全不重複",
@@ -515,35 +616,17 @@ def render(sample_csv_path: Path) -> None:
         s2.metric("排除尾數", str(_effective_tails))
         s2.caption(f"來源:{_source_label} · {_detail}")
 
-    # --- v6.17: 把排除尾數展開為具體號碼 + 套用按鈕 ---
-    _expanded = _expand_tails_to_numbers(_effective_tails, POOL_MIN, POOL_MAX)
-    if _expanded:
-        st.markdown(
-            f"💡 **系統建議排除這 {len(_expanded)} 顆**(由排除尾數 {sorted(_effective_tails)} 展開):"
-            + " ".join(f"`{n:02d}`" for n in _expanded)
-        )
-        bcol1, bcol2, bcol3 = st.columns([1, 1, 2])
-        if bcol1.button(
-            "📥 套用到「排除特定號碼」",
-            key="l649_apply_sys_excl",
-            use_container_width=True,
-            help="把上方系統建議展開的號碼一鍵填入排除清單,你可以再增加或取消個別號碼",
-        ):
-            st.session_state["l649_excl_pills"] = list(_expanded)
-            st.session_state["l649_excl_multi"] = list(_expanded)
-            st.rerun()
-        if bcol2.button(
-            "🧹 清空排除清單",
-            key="l649_clear_excl",
-            use_container_width=True,
-        ):
-            st.session_state["l649_excl_pills"] = []
-            st.session_state["l649_excl_multi"] = []
-            st.rerun()
-        st.caption(
-            "套用 = 把上面 20 顆寫進「排除特定號碼」按鈕區 ｜ "
-            "套用後可在參數設定 → 排除特定號碼 取消保留 / 額外加碼"
-        )
+    # --- v6.18: 主面板生效快照(§1 Fail Loud 眼見為憑) ---
+    _effective_pool = {
+        n for n in range(POOL_MIN, POOL_MAX + 1)
+        if (n % 10) not in set(_effective_tails)
+    } - set(manual_excluded_numbers or [])
+    st.caption(
+        f"🎯 **實際生效**:排除尾數 {len(_effective_tails)} 種"
+        f"(={len(_expand_tails_to_numbers(_effective_tails, POOL_MIN, POOL_MAX))} 顆)"
+        f" + 排除特定號碼 {len(manual_excluded_numbers or [])} 顆"
+        f" → 選號池剩 **{len(_effective_pool)}** 顆"
+    )
 
     # --- Silent-drop notice ---
     if not manual_keys and manual_excluded_numbers:

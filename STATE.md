@@ -116,6 +116,22 @@ my-lottery-2026/
   - 新測試：`tests/test_review_findings.py` 14 個 cases — 3 個風險各帶 raise 路徑 + 兼容性正例
   - 驗證：144 unit tests 全綠（134 → 144，+10）；既有引擎/scraper/UI 零退化
 
+## 排除清單自動預填 + 膽碼/注數改按鈕 + 主面板生效快照(v6.18)
+- [x] **使用者回報「手動膽碼、注數請給我按鈕,另外排除特定號碼動態排除要顯示在上面可加減」**  ✅ 2026-06-24
+  - 觸發:v6.17 把排除尾數展開後放主面板「💡 系統建議排除」+「📥 套用」按鈕,UX 動線斷裂 — 按了套用要 rerun 回參數區再按一次產生才生效,使用者誤以為「沒套用上」;另外手動膽碼還是 multiselect 下拉、注數還是 slider,跟「排除尾數 pills」UI 不一致
+  - **§1 Fail Loud 驗證**:跑真實 577 期 + 排除 9 顆號碼 + seed=42 → 20 注 0 違反(`tickets[:3]=[(5,16,31,32,48,49), (4,5,18,35,44,48), (3,5,17,34,44,48)]`),確認引擎層「排除特定號碼」是有套用的,問題只在 UX 動線
+  - **修法**(兩 view 同步):
+    1. **手動膽碼**:`st.multiselect` → `st.pills(selection_mode='multi')`,跟尾數按鈕 UI 一致;舊 streamlit fallback 給 multiselect
+    2. **注數**:`st.slider` → `st.pills(selection_mode='single')` 快選(大樂透 [1,5,10,15,20,30,50]、威力彩 [1,3,5,8,10]);舊 streamlit fallback 給 slider
+    3. **排除特定號碼 seed 動態建議**:把 history 載入 + `cached_analysis` 上推到 expander 內、widget render 過程中;計算 `sys_recommended = analysis.cold ∪ 過熱尾數展開 - 手動膽碼`;用 sentinel key `l649_excl_seeded` / `pb_excl_seeded` 確保只 seed 一次,之後尊重 session_state
+    4. **參數區加按鈕**:「排除特定號碼」pills 下方加 🔄 重設為系統建議 / 🧹 全清空 兩顆 column 按鈕(放在 expander 內,點完直接顯示,不必再按產生)
+    5. **主面板生效快照**(§1 眼見為憑):移除 v6.17 「💡 系統建議排除 + 📥 套用 + 🧹 清空」整段(冗餘);改為 `🎯 實際生效:排除尾數 X 種(=N 顆) + 排除特定號碼 Y 顆 → 選號池剩 Z 顆`
+  - **設計取捨**:
+    - 早期 analyze 用 `seed=0` 鎖快取 key,避免跟主面板 analyze 互踩(兩份 cache 但 cache lookup 微秒級無感)
+    - sentinel key 只在 `not is_fallback` 時 seed → 第一次 fallback 不 seed,下次有真 analysis 時補 seed
+    - 切換 source / 上傳新 CSV 後 session_state 維持上次選擇(尊重使用者),要拉回最新動態建議點「🔄 重設」
+  - **影響**:純 UI 改動,引擎/濾網/憲法不動;207 unit tests 全綠、pyflakes 0、`check_constitution` 7/7 PASS
+
 ## 排除尾數展開成具體號碼 + 套用按鈕(v6.17)
 - [x] **使用者回報「系統移除的號碼看不到、想在號碼選項上呈現可加減」**  ✅ 2026-06-23
   - 觸發:截圖顯示主畫面 card「排除尾數:[1, 6, 8, 9]」只列尾數,沒列出對應的具體 20 顆號碼;「排除特定號碼」按鈕區也預設空、使用者要自己手動選
