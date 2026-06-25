@@ -128,6 +128,21 @@ def cached_analysis(
     )
 
 
+# --- Widget callbacks ---------------------------------------------------------
+# v6.18.1: 同步 lotto649_view 修正 — 內聯寫 widget session_state 會觸發
+# StreamlitAPIException。改 on_click callback 即可。
+
+
+def _reset_pb_excl_callback() -> None:
+    st.session_state.pop("pb_excl_seeded", None)
+
+
+def _clear_pb_excl_callback() -> None:
+    st.session_state["pb_excl_pills"] = []
+    st.session_state["pb_excl_multi"] = []
+    st.session_state["pb_excl_seeded"] = True
+
+
 # --- Render entry --------------------------------------------------------------
 
 
@@ -342,24 +357,20 @@ def render(sample_csv_path: Path) -> None:
         excl_arg = list(manual_excluded_numbers) if manual_excluded_numbers else None
 
         _btn_col1, _btn_col2 = st.columns(2)
-        if _btn_col1.button(
+        _btn_col1.button(
             "🔄 重設為系統建議",
             key="pb_reset_excl",
             use_container_width=True,
             help=f"重設為系統建議的 {len(_sys_recommended)} 顆排除清單",
-        ):
-            st.session_state["pb_excl_pills"] = list(_sys_recommended)
-            st.session_state["pb_excl_multi"] = list(_sys_recommended)
-            st.rerun()
-        if _btn_col2.button(
+            on_click=_reset_pb_excl_callback,
+        )
+        _btn_col2.button(
             "🧹 全清空",
             key="pb_clear_excl",
             use_container_width=True,
             help="清空排除特定號碼清單",
-        ):
-            st.session_state["pb_excl_pills"] = []
-            st.session_state["pb_excl_multi"] = []
-            st.rerun()
+            on_click=_clear_pb_excl_callback,
+        )
 
         st.markdown("#### ⚡ 第二區特別號 (1-8)")
         bonus_mode = st.radio(
