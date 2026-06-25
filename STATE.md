@@ -116,6 +116,17 @@ my-lottery-2026/
   - 新測試：`tests/test_review_findings.py` 14 個 cases — 3 個風險各帶 raise 路徑 + 兼容性正例
   - 驗證：144 unit tests 全綠（134 → 144，+10）；既有引擎/scraper/UI 零退化
 
+## Hotfix:reset/clear 按鈕改 on_click(v6.18.1)
+- [x] **使用者回報截圖 StreamlitAPIException:line 360 `st.session_state["l649_excl_pills"] = list(_sys_recommended)`**  ✅ 2026-06-25
+  - 根因:Streamlit 不允許在 widget 已被實體化的同一個 script run 內寫該 widget 的 session_state key。v6.18 的「🔄 重設為系統建議」/「🧹 全清空」按鈕用 `if st.button(...): st.session_state[widget_key] = ...; st.rerun()` 內聯改值 → pills 已 render → 爆炸
+  - 修法(兩 view 同步):
+    1. 抽出 module-level callback:`_reset_l649_excl_callback` / `_clear_l649_excl_callback`(威力彩 `pb_*` 同款)
+    2. 按鈕改 `st.button(..., on_click=cb)`,callback 由 Streamlit 在下一輪 rerun 啟動時、widget 渲染前執行 → 寫 session_state 合法
+    3. Reset callback 只清 sentinel(`l649_excl_seeded`),下一輪由 expander 內既有的 seed 區塊根據當期 `_sys_recommended` 重填(自動跟上使用者剛剛改的 σ / 膽碼)
+    4. Clear callback 直接寫 `[]` + sentinel=True(防被 seed 區塊蓋回去)
+  - 驗證:207 unit tests 全綠、`check_constitution` 7/7 PASS、本地模擬 callback 副作用 4 個 case 通過
+  - 變更檔案:`src/ui/lotto649_view.py`(+15 / -10)、`src/ui/powerball_view.py`(+15 / -10)、`STATE.md`
+
 ## 排除清單自動預填 + 膽碼/注數改按鈕 + 主面板生效快照(v6.18)
 - [x] **使用者回報「手動膽碼、注數請給我按鈕,另外排除特定號碼動態排除要顯示在上面可加減」**  ✅ 2026-06-24
   - 觸發:v6.17 把排除尾數展開後放主面板「💡 系統建議排除」+「📥 套用」按鈕,UX 動線斷裂 — 按了套用要 rerun 回參數區再按一次產生才生效,使用者誤以為「沒套用上」;另外手動膽碼還是 multiselect 下拉、注數還是 slider,跟「排除尾數 pills」UI 不一致

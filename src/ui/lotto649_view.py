@@ -130,6 +130,23 @@ def cached_analysis(
     )
 
 
+# --- Widget callbacks ---------------------------------------------------------
+# v6.18.1: Streamlit 禁止在 widget 渲染後內聯寫其 session_state key (StreamlitAPIException)。
+# 改用 on_click callback:在下一輪 rerun 啟動時、widget 渲染前執行,寫入合法。
+# Reset:清掉 sentinel 讓 seed 區塊在新 rerun 重新填入當期 _sys_recommended;
+# Clear:直接寫空 list,並把 sentinel 鎖成 True 防止再被覆寫。
+
+
+def _reset_l649_excl_callback() -> None:
+    st.session_state.pop("l649_excl_seeded", None)
+
+
+def _clear_l649_excl_callback() -> None:
+    st.session_state["l649_excl_pills"] = []
+    st.session_state["l649_excl_multi"] = []
+    st.session_state["l649_excl_seeded"] = True
+
+
 # --- Render entry --------------------------------------------------------------
 
 
@@ -351,24 +368,20 @@ def render(sample_csv_path: Path) -> None:
             )
 
         _btn_col1, _btn_col2 = st.columns(2)
-        if _btn_col1.button(
+        _btn_col1.button(
             "🔄 重設為系統建議",
             key="l649_reset_excl",
             use_container_width=True,
             help=f"重設為系統建議的 {len(_sys_recommended)} 顆排除清單",
-        ):
-            st.session_state["l649_excl_pills"] = list(_sys_recommended)
-            st.session_state["l649_excl_multi"] = list(_sys_recommended)
-            st.rerun()
-        if _btn_col2.button(
+            on_click=_reset_l649_excl_callback,
+        )
+        _btn_col2.button(
             "🧹 全清空",
             key="l649_clear_excl",
             use_container_width=True,
             help="清空排除特定號碼清單",
-        ):
-            st.session_state["l649_excl_pills"] = []
-            st.session_state["l649_excl_multi"] = []
-            st.rerun()
+            on_click=_clear_l649_excl_callback,
+        )
 
         sum_mode = st.radio(
             "和值區間", ["動態 SMA", "手動"], horizontal=True, key="l649_summode",
