@@ -116,6 +116,35 @@ my-lottery-2026/
   - 新測試：`tests/test_review_findings.py` 14 個 cases — 3 個風險各帶 raise 路徑 + 兼容性正例
   - 驗證：144 unit tests 全綠（134 → 144，+10）；既有引擎/scraper/UI 零退化
 
+## 霍華德嚴格模式 — 黃金 8 條 opt-in(v6.19)
+- [x] **使用者請求「請幫我修改策略 蓋兒.霍華德:黃金選號條件檢核表」**  ✅ 2026-06-26
+  - 來源:Gail Howard《Lottery Master Guide》& 《Lotto Wheel Five to Win》— 8 條黃金規則 + 聰明組合法
+  - 對齊四問(CLAUDE.md §7):資料來源 = 既有 `analysis.gaps + history_draws[0]`;延遲不變(zero-network);邊界 = 史料 < 5 期 / `is_fallback=True` 自動降級;倖存率粗估 0.2%(實測 Round 1 可能湊不滿 → Round 2 退 v6.16)
+  - 方案(7 題決策):toggle 模式 + 混合硬綁/軟分 + Key Wheel + 先濾再包 + SMA clamp [115,185] + 只動大樂透 + 降回 v6.16
+  - **picker(`src/generator/lotto_picker.py`)**:
+    - 新增常數 `HOWARD_SUM_MIN/MAX = 115/185`、`HOWARD_SMALL_THRESHOLD = 24`、`HOWARD_ALLOWED_SMALL_COUNTS = {2,3,4}`、`HOWARD_EXACT_TAIL_PAIRS = 1`、`HOWARD_MAX_EMPTY_DECADES = 2`、`HOWARD_EXACT_CONSEC_PAIRS = 1`、`HOWARD_GAP5_THRESHOLD = 5`、`HOWARD_GAP5_ALLOWED_COUNTS = {4,5}`、`HOWARD_REPEAT_FROM_LAST = 1`、`HOWARD_SOFT_MIN_SCORE = 3`、`HOWARD_MIN_HISTORY = 5`
+    - 新增 helper `_howard_hard_pass`(#1/#2/#3 硬綁)、`_howard_soft_score`(#4-#8 軟分 0-5,gaps/last_draw 不可得自動 +1)
+    - `_passes_filters` 加 `howard_mode` / `howard_gaps` / `howard_last_draw` 參數
+    - `_generate_batch_disjoint` 加同款參數 + 多一個 sub-A round(Howard mode 4 相,v6.16 維持 3 相)
+    - `generate_tickets` 加 `howard_mode` 參數 + §1 Fail Loud validation(史料不足 / fallback raise)
+    - Round 1 套 Howard,Round 2 fallback 鏈一律退回 v6.16(plan 規定;`v616_s_lo/hi` 在 howard_mode 下用作 sub-A 後援)
+    - Howard #1 sum 用 SMA±pad clamp 到 [115, 185](Q5-b)
+    - v6.16 谷底陷阱 (`MAX_BASEMENT_PER_TICKET = 1`) 在 Howard 模式仍生效(雙重保險)
+  - **UI(`src/ui/lotto649_view.py`)**:
+    - 加 `🎯 霍華德嚴格模式` checkbox(預設關閉,參數區內)
+    - 加新 expander「霍華德黃金 8 條(v6.19 opt-in)」列硬綁/軟分條文 + provenance
+    - 加降級邏輯:`len(history) < HOWARD_MIN_HISTORY` 或 `analysis.is_fallback` → `st.warning` + 強制 `howard_active=False`
+    - Howard 啟用時 `st.info` 提示 Round 2 fallback 行為
+    - 威力彩維持 v6.16(Q6-b)
+  - **測試(`tests/test_lotto_picker.py`)**:加 `TestHowardMode` 群組共 20 個 test
+    - 硬綁 3 條每條一單元測(sum/odd/small 切分 24/25)
+    - 軟分 5 條各條一測(#4 同尾恰 1 / #5 字頭空 / #6 連號恰 1 / #7 gap5 / #8 連莊)
+    - 軟分閾值 3-of-5
+    - 史料 < 5 raise、`is_fallback` raise、最小 5 期可跑、預設關 mode 行為不變、Round 1 多數過硬綁
+    - 3 易錯輸入:重複歷史 + 顯式 manual_excluded_tails / 邊界 5 期 / Howard + batch_disjoint 互動 pair-disjoint
+  - 驗證:`TestHowardMode` 20/20 全綠;既有 33 picker tests 全綠無回歸;憲法 checker 7/7 PASS
+  - 變更檔案:`src/generator/lotto_picker.py`、`src/ui/lotto649_view.py`、`tests/test_lotto_picker.py`、`STATE.md`、`CLAUDE.md`
+
 ## Hotfix:reset/clear 按鈕改 on_click(v6.18.1)
 - [x] **使用者回報截圖 StreamlitAPIException:line 360 `st.session_state["l649_excl_pills"] = list(_sys_recommended)`**  ✅ 2026-06-25
   - 根因:Streamlit 不允許在 widget 已被實體化的同一個 script run 內寫該 widget 的 session_state key。v6.18 的「🔄 重設為系統建議」/「🧹 全清空」按鈕用 `if st.button(...): st.session_state[widget_key] = ...; st.rerun()` 內聯改值 → pills 已 render → 爆炸

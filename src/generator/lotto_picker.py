@@ -10,6 +10,9 @@ Pipeline:
                                   sum ∈ analysis.sum_min/max_dynamic
                                   (or manual_sum_range), odd ∈ {2,3,4},
                                   big(>31) ≥ 3
+    Phase 4'  Howard mode       : (v6.19, opt-in) Gail Howard《Lottery Master
+                                  Guide》黃金 8 條:#1/#2/#3 硬綁,#4-#8 軟分
+                                  ≥ 3/5;Round 2/3 fallback 退回 v6.16 五大濾網。
 
 Stdlib only: `random` + `itertools` (+ `collections`/`statistics` via engine).
 """
@@ -67,6 +70,24 @@ MIN_EMPTY_DECADES = 1
 # 實測 577 期大樂透命中率 85.8% ≤ 1 顆 cold(2026-06-23 sanity check)。
 MAX_BASEMENT_PER_TICKET = 1
 
+# v6.19 Howard 黃金 8 條(opt-in `howard_mode=True` 啟用)
+# Source: Gail Howard《Lottery Master Guide》& 《Lotto Wheel Five to Win》
+# 大樂透 6/49 域翻譯;#2 沿用 v6.16 `ALLOWED_ODD_COUNTS`、#5 配 v6.16
+# `MIN_EMPTY_DECADES` 雙向夾擊、#11 谷底陷阱仍生效雙重保險(已驗證不衝突)。
+# 倖存率估算:hard 3 條 ~40% × soft >= 3/5 ~50% ≈ 20%(實測待 backtest 確認)。
+HOWARD_SUM_MIN = 115                                # #1 總和下界
+HOWARD_SUM_MAX = 185                                # #1 總和上界
+HOWARD_SMALL_THRESHOLD = 24                         # #3 切分:n <= 24 算小, n >= 25 算大
+HOWARD_ALLOWED_SMALL_COUNTS: frozenset = frozenset({2, 3, 4})  # #3
+HOWARD_EXACT_TAIL_PAIRS = 1                         # #4 同尾恰 1 對
+HOWARD_MAX_EMPTY_DECADES = 2                        # #5 字頭空 1-2 個(下界用 v6.16 MIN_EMPTY_DECADES)
+HOWARD_EXACT_CONSEC_PAIRS = 1                       # #6 連號恰 1 對
+HOWARD_GAP5_THRESHOLD = 5                           # #7「近期出過」= gap <= 5
+HOWARD_GAP5_ALLOWED_COUNTS: frozenset = frozenset({4, 5})  # #7 4-5 顆
+HOWARD_REPEAT_FROM_LAST = 1                         # #8 上期含 1 顆
+HOWARD_SOFT_MIN_SCORE = 3                           # 5 條軟分 >= 3 才通過
+HOWARD_MIN_HISTORY = 5                              # 史料 < 5 期禁用 Howard
+
 
 # --- Validation helpers -------------------------------------------------------
 
@@ -102,6 +123,69 @@ def _validate_history(draws: Sequence[Sequence[int]]) -> None:
         _validate_unique(f"history_draws[{i}]", ints)
 
 
+def _howard_hard_pass(ticket: tuple[int, ...], s_lo: int, s_hi: int) -> bool:
+    """v6.19 Howard 黃金 8 條 #1/#2/#3 硬綁。
+
+    呼叫端負責把 s_lo/s_hi 設成 SMA±30 clamp 到 [HOWARD_SUM_MIN, HOWARD_SUM_MAX]。
+    """
+    if not (s_lo <= sum(ticket) <= s_hi):
+        return False
+    odd_count = sum(1 for n in ticket if n % 2 == 1)
+    if odd_count not in ALLOWED_ODD_COUNTS:
+        return False
+    small_count = sum(1 for n in ticket if n <= HOWARD_SMALL_THRESHOLD)
+    if small_count not in HOWARD_ALLOWED_SMALL_COUNTS:
+        return False
+    return True
+
+
+def _howard_soft_score(
+    ticket: tuple[int, ...],
+    gaps: dict[int, int] | None,
+    last_draw: frozenset[int],
+) -> int:
+    """v6.19 Howard #4-#8 軟分,返回 0-5。
+
+    史料訊號不可得時自動 +1(`gaps=None` ⇒ #7 跳過;`last_draw=frozenset()` ⇒ #8 跳過)。
+    呼叫端負責先驗證史料充足性(`HOWARD_MIN_HISTORY`)。
+    """
+    score = 0
+    # #4 同尾恰 1 對:exactly 1 個尾數出現 2 次,其餘尾數都唯一(禁 ≥ 3 同尾)
+    tail_counter = Counter(n % 10 for n in ticket)
+    pair_tails = sum(1 for c in tail_counter.values() if c == 2)
+    over_pairs = sum(1 for c in tail_counter.values() if c >= 3)
+    if pair_tails == HOWARD_EXACT_TAIL_PAIRS and over_pairs == 0:
+        score += 1
+    # #5 字頭空 1-2 個(下界沿用 v6.16 MIN_EMPTY_DECADES=1)
+    ticket_set = frozenset(ticket)
+    empty_decades = sum(1 for band in DECADE_BANDS if not (band & ticket_set))
+    if MIN_EMPTY_DECADES <= empty_decades <= HOWARD_MAX_EMPTY_DECADES:
+        score += 1
+    # #6 連號恰 1 對
+    consec = sum(
+        1 for i in range(TICKET_SIZE - 1) if ticket[i + 1] - ticket[i] == 1
+    )
+    if consec == HOWARD_EXACT_CONSEC_PAIRS:
+        score += 1
+    # #7 4-5 顆 gap <= 5(史料不足時 gaps=None → 自動 +1)
+    if gaps is None:
+        score += 1
+    else:
+        recent = sum(
+            1 for n in ticket if gaps.get(n, 10**9) <= HOWARD_GAP5_THRESHOLD
+        )
+        if recent in HOWARD_GAP5_ALLOWED_COUNTS:
+            score += 1
+    # #8 連莊:上期含 1 顆(last_draw 空 frozenset → 自動 +1)
+    if not last_draw:
+        score += 1
+    else:
+        repeat = sum(1 for n in ticket if n in last_draw)
+        if repeat == HOWARD_REPEAT_FROM_LAST:
+            score += 1
+    return score
+
+
 def _passes_filters(
     ticket: tuple[int, ...],
     s_lo: int,
@@ -109,12 +193,28 @@ def _passes_filters(
     *,
     apply_secondary: bool,
     basement_set: frozenset[int] = frozenset(),
+    howard_mode: bool = False,
+    howard_gaps: dict[int, int] | None = None,
+    howard_last_draw: frozenset[int] = frozenset(),
 ) -> bool:
-    """Apply v6.16 七大濾網 (Howard #4 + #11 加入).
+    """Apply v6.16 七大濾網 (Howard #4 + #11 加入),或 v6.19 Howard 黃金 8 條。
 
     `apply_secondary=False` ⇒ sum-only (Round 3 fallback);所有次要濾網
-    (奇偶/大小/質數/連號/字頭/谷底)全部關閉。
+    (奇偶/大小/質數/連號/字頭/谷底/Howard)全部關閉。
+
+    `howard_mode=True` ⇒ #1/#2/#3 硬綁 + #4-#8 軟分 ≥ HOWARD_SOFT_MIN_SCORE;
+    谷底陷阱(v6.16 #11)仍生效雙重保險。
     """
+    if howard_mode and apply_secondary:
+        if not _howard_hard_pass(ticket, s_lo, s_hi):
+            return False
+        if _howard_soft_score(ticket, howard_gaps, howard_last_draw) < HOWARD_SOFT_MIN_SCORE:
+            return False
+        # v6.16 谷底陷阱仍啟用(plan: 雙重保險,不衝突)
+        if basement_set and sum(1 for n in ticket if n in basement_set) > MAX_BASEMENT_PER_TICKET:
+            return False
+        return True
+
     if not (s_lo <= sum(ticket) <= s_hi):
         return False
     if not apply_secondary:
@@ -152,6 +252,11 @@ def _generate_batch_disjoint(
     num_tickets: int,
     rng: random.Random,
     basement_set: frozenset[int] = frozenset(),
+    howard_mode: bool = False,
+    howard_gaps: dict[int, int] | None = None,
+    howard_last_draw: frozenset[int] = frozenset(),
+    fallback_s_lo: int | None = None,
+    fallback_s_hi: int | None = None,
 ) -> list[tuple[int, ...]]:
     """批次覆蓋模式(v6.15):嚴格 pair-disjoint + 均衡硬上限。
 
@@ -159,13 +264,13 @@ def _generate_batch_disjoint(
     v6.15:在 v6.13 基礎上加「每號出現次數 ≤ ⌈6N/P⌉ + 1」的均衡硬上限
             (P = 有效池大小;+1 為使用者明示允許的容差);防止 pair-disjoint
             雖然不重複但某號 0 次、某號 5 次的高方差分佈。
+    v6.19:加 Howard 模式:sub-A 套 Howard 8 條,sub-B/C/D 退回 v6.16。
 
     理論上限 = ⌊C(pool, 2) / C(6, 2)⌋(扣濾網實際更少)。
 
-    三相 filter 漸進降級,每相內嚴格 pair-disjoint + 均衡 cap:
-    - sub-A: dynamic sum (s_lo, s_hi) + full 5 filters
-    - sub-B: static [SUM_MIN, SUM_MAX] + full 5 filters
-    - sub-C: 無 sum 邊界 + 無次要濾網
+    Sub-round 漸進降級(每相內嚴格 pair-disjoint + 均衡 cap):
+    - Howard 模式 4 相: Howard / v6.16 dynamic / v6.16 static / sum-only
+    - v6.16  模式 3 相: dynamic sum + 5 filters / static + 5 filters / sum-only
 
     湊不到 num_tickets 直接 return,呼叫端負責 warn。
     """
@@ -183,12 +288,23 @@ def _generate_batch_disjoint(
     all_combos = list(combinations(sorted(drag_candidates), needed))
     rng.shuffle(all_combos)
 
-    sub_rounds = (
-        ((s_lo, s_hi), True),
-        ((SUM_MIN, SUM_MAX), True),
-        ((TICKET_SIZE * POOL_MIN, TICKET_SIZE * POOL_MAX), False),
-    )
-    for (sub_lo, sub_hi), apply_full in sub_rounds:
+    # 3-tuple: ((sum_lo, sum_hi), apply_secondary, use_howard)
+    if howard_mode:
+        fb_lo = fallback_s_lo if fallback_s_lo is not None else SUM_MIN
+        fb_hi = fallback_s_hi if fallback_s_hi is not None else SUM_MAX
+        sub_rounds = (
+            ((s_lo, s_hi), True, True),               # sub-A: Howard
+            ((fb_lo, fb_hi), True, False),            # sub-B: v6.16 dynamic
+            ((SUM_MIN, SUM_MAX), True, False),        # sub-C: v6.16 static
+            ((TICKET_SIZE * POOL_MIN, TICKET_SIZE * POOL_MAX), False, False),  # sub-D
+        )
+    else:
+        sub_rounds = (
+            ((s_lo, s_hi), True, False),
+            ((SUM_MIN, SUM_MAX), True, False),
+            ((TICKET_SIZE * POOL_MIN, TICKET_SIZE * POOL_MAX), False, False),
+        )
+    for (sub_lo, sub_hi), apply_full, use_howard in sub_rounds:
         if len(results) >= num_tickets:
             break
         for combo in all_combos:
@@ -202,6 +318,9 @@ def _generate_batch_disjoint(
             if not _passes_filters(
                 ticket, sub_lo, sub_hi,
                 apply_secondary=apply_full, basement_set=basement_set,
+                howard_mode=use_howard,
+                howard_gaps=howard_gaps if use_howard else None,
+                howard_last_draw=howard_last_draw if use_howard else frozenset(),
             ):
                 continue
             new_pairs = set(combinations(ticket, 2))
@@ -241,6 +360,8 @@ def generate_tickets(
     precomputed_analysis: HistoryAnalysis | None = None,
     # Batch-disjoint mode: drag numbers are globally unique across tickets.
     batch_disjoint: bool = False,
+    # v6.19 Howard 黃金 8 條(opt-in)— 史料 < HOWARD_MIN_HISTORY 或 fallback raise
+    howard_mode: bool = False,
     rng: random.Random | None = None,
 ) -> tuple[list[tuple[int, ...]], HistoryAnalysis]:
     """Produce up to `num_tickets` filtered combinations + analysis snapshot.
@@ -248,6 +369,12 @@ def generate_tickets(
     Manual overrides — when provided — supersede dynamic signals; this is the
     surface that v5.0 §2 graceful-degradation path uses (UI substitutes
     STATIC_FALLBACK_ANALYSIS via `precomputed_analysis`).
+
+    `howard_mode=True` 啟用 Gail Howard 黃金 8 條(v6.19):#1/#2/#3 硬綁 +
+    #4-#8 軟分 ≥ 3/5;sum 範圍 SMA±30 clamp 到 [115, 185];Round 2/3 fallback
+    自動退回 v6.16 五大濾網。**呼叫端必須**保證 `len(history_draws) >=
+    HOWARD_MIN_HISTORY` 且 `analysis.is_fallback=False`,否則 raise(§1 Fail
+    Loud — UI 必須先檢查再傳入)。
 
     Raises ValueError on invalid input or unsatisfiable configuration.
     """
@@ -275,6 +402,19 @@ def generate_tickets(
             dormant_periods=dormant_periods,
             rng=rng,
         )
+
+    # --- v6.19 Howard mode validation (§1 Fail Loud) ---
+    if howard_mode:
+        if len(history_draws) < HOWARD_MIN_HISTORY:
+            raise ValueError(
+                f"howard_mode requires >= {HOWARD_MIN_HISTORY} history rows "
+                f"(got {len(history_draws)}); UI must force howard_mode=False"
+            )
+        if analysis.is_fallback:
+            raise ValueError(
+                "howard_mode requires real history (analysis.is_fallback=True); "
+                "UI must force howard_mode=False"
+            )
 
     # --- Phase 2: pool + dynamic 雙膽 ---
     if manual_excluded_tails is not None:
@@ -337,18 +477,33 @@ def generate_tickets(
     all_combos = list(combinations(drag_sorted, needed))
     rng.shuffle(all_combos)
 
-    # --- Phase 4: five filters ---
+    # --- Phase 4: five filters (or Howard 8 條 when howard_mode=True) ---
+    v616_s_lo, v616_s_hi = analysis.sum_min_dynamic, analysis.sum_max_dynamic
     if manual_sum_range is not None:
         s_lo, s_hi = manual_sum_range
         if not (isinstance(s_lo, int) and isinstance(s_hi, int)):
             raise ValueError("manual_sum_range must be (int, int)")
         if s_lo > s_hi:
             raise ValueError("manual_sum_range lo must be <= hi")
+    elif howard_mode:
+        # v6.19 Howard #1: SMA±pad clamp 到 [HOWARD_SUM_MIN, HOWARD_SUM_MAX]
+        h_lo = max(HOWARD_SUM_MIN, int(round(analysis.sum_sma - sum_range_pad)))
+        h_hi = min(HOWARD_SUM_MAX, int(round(analysis.sum_sma + sum_range_pad)))
+        if h_lo > h_hi:
+            # SMA outside [115, 185] → collapse to nearest Howard boundary
+            h_lo = h_hi = (
+                HOWARD_SUM_MAX if analysis.sum_sma > HOWARD_SUM_MAX else HOWARD_SUM_MIN
+            )
+        s_lo, s_hi = h_lo, h_hi
     else:
-        s_lo, s_hi = analysis.sum_min_dynamic, analysis.sum_max_dynamic
+        s_lo, s_hi = v616_s_lo, v616_s_hi
 
     # v6.16 Howard #11 谷底陷阱:極冷號集合來自 engine analysis.cold
     basement_set = frozenset(analysis.cold)
+
+    # v6.19 Howard #7/#8 signals
+    howard_gaps = dict(analysis.gaps) if howard_mode else None
+    howard_last_draw = frozenset(history_draws[0]) if howard_mode else frozenset()
 
     # --- Batch-disjoint branch ---
     if batch_disjoint:
@@ -363,6 +518,11 @@ def generate_tickets(
             num_tickets=num_tickets,
             rng=rng,
             basement_set=basement_set,
+            howard_mode=howard_mode,
+            howard_gaps=howard_gaps,
+            howard_last_draw=howard_last_draw,
+            fallback_s_lo=v616_s_lo,
+            fallback_s_hi=v616_s_hi,
         )
         # §4.2 不變量斷言（與 main return 同規格）
         for t in tickets:
@@ -374,6 +534,7 @@ def generate_tickets(
         return tickets, analysis
 
     # Round 1: standard 5-filter cascade with ticket-level uniqueness.
+    # v6.19: 若 howard_mode=True 則套 Howard 8 條,否則沿用 v6.16 五大濾網。
     results: list[tuple[int, ...]] = []
     seen: set[tuple[int, ...]] = set()
     for combo in all_combos:
@@ -385,6 +546,9 @@ def generate_tickets(
         if not _passes_filters(
             ticket, s_lo, s_hi,
             apply_secondary=True, basement_set=basement_set,
+            howard_mode=howard_mode,
+            howard_gaps=howard_gaps,
+            howard_last_draw=howard_last_draw,
         ):
             continue
         results.append(ticket)
@@ -393,9 +557,10 @@ def generate_tickets(
     # Round 2 (disjoint fallback): only triggers when Round 1 fell short.
     # Each new ticket's 6 numbers must NOT overlap with ANY prior ticket's
     # numbers. Three sub-rounds progressively relax the sum/secondary filters:
-    #   sub-A: dynamic sum + full 5 filters
+    #   sub-A: dynamic sum + full 5 filters       (Howard 模式下用 v6.16 dynamic)
     #   sub-B: static 90-210     + full 5 filters
     #   sub-C: no sum bounds     + no secondary filters
+    # v6.19: Howard 模式下 Round 2 一律退回 v6.16(plan 規定);keep 谷底陷阱。
     # Trade-off: Round 2 tickets cannot include keys (keys are "used" already
     # by Round 1 tickets). This is the documented cost of the disjoint mode.
     if len(results) < num_tickets:
@@ -406,8 +571,12 @@ def generate_tickets(
         if len(remaining) >= TICKET_SIZE:
             round2_combos = list(combinations(sorted(remaining), TICKET_SIZE))
             rng.shuffle(round2_combos)
+            # v6.19:Howard 模式下 sub-A 改用 v616_s_lo/hi(本 round 已退回 v6.16)
+            fallback_lo, fallback_hi = (
+                (v616_s_lo, v616_s_hi) if howard_mode else (s_lo, s_hi)
+            )
             sub_rounds = (
-                ((s_lo, s_hi), True),
+                ((fallback_lo, fallback_hi), True),
                 ((SUM_MIN, SUM_MAX), True),
                 ((TICKET_SIZE * POOL_MIN, TICKET_SIZE * POOL_MAX), False),
             )
