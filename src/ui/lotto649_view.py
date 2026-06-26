@@ -29,6 +29,13 @@ from src.generator.history_engine import (
     HistoryAnalysis,
     analyze,
 )
+from src.generator.abbreviated_wheel import (
+    WHEEL_GUARANTEE_P,
+    WHEEL_GUARANTEE_T,
+    WHEEL_SIZE,
+    WHEEL_TICKET_COUNT,
+    pick_abbreviated_wheel,
+)
 from src.generator.lotto_picker import (
     ALLOWED_ODD_COUNTS,
     BIG_THRESHOLD,
@@ -481,6 +488,70 @@ def render(sample_csv_path: Path) -> None:
 **降級**:史料 < {HOWARD_MIN_HISTORY} 期 或 `is_fallback=True` → 自動退回 v6.16 + warning。
 """
         )
+
+    with st.expander("🎯 精簡包牌(Abbreviated Wheel, 4保3)— v6.20"):
+        st.markdown(
+            f"""
+**保證**:你抓 **{WHEEL_SIZE}** 個號(自選),若 6 個中獎號中**有 {WHEEL_GUARANTEE_T} 個落在你抓的 {WHEEL_SIZE} 個內**,則 **{WHEEL_TICKET_COUNT} 注**中**至少 1 注命中 {WHEEL_GUARANTEE_P} 個**(數學保證,非統計推估)。
+
+**注數**:{WHEEL_TICKET_COUNT} 注 × NT$ {UNIT_PRICE_TWD} = **NT$ {WHEEL_TICKET_COUNT * UNIT_PRICE_TWD}**
+
+**Source**:greedy set-cover on (12, 6, 4; 3) lotto design — `src/generator/abbreviated_wheel.py:WHEEL_12_4_OF_4_3`;`tests/test_abbreviated_wheel.py` 暴搜驗證 495 個 4-subset 全覆蓋。
+
+⚠️ **與智能選號不同**:這裡不過 v6.16 / Howard 濾網 — 濾網會破壞 covering 數學保證,**故意不混用**。
+"""
+        )
+        wheel_pool = st.multiselect(
+            f"選 {WHEEL_SIZE} 個號碼",
+            options=list(range(POOL_MIN, POOL_MAX + 1)),
+            default=[],
+            max_selections=WHEEL_SIZE,
+            help=f"恰好選 {WHEEL_SIZE} 個 ∈ [{POOL_MIN}, {POOL_MAX}] 的整數,不重複。",
+            key="l649_wheel_pool",
+        )
+        wheel_seed_str = st.text_input(
+            "隨機種子(空白=固定排序)",
+            value="",
+            help="同 seed 同輸出;留空走 sorted-pool 確定性映射。",
+            key="l649_wheel_seed",
+        )
+        wheel_go = st.button(
+            f"🎯 產生 {WHEEL_TICKET_COUNT} 注精簡包牌",
+            type="secondary",
+            use_container_width=True,
+            key="l649_wheel_go",
+        )
+        if wheel_go:
+            if len(wheel_pool) != WHEEL_SIZE:
+                st.warning(
+                    f"⚠️ 需恰好選 {WHEEL_SIZE} 個號(目前 {len(wheel_pool)} 個)。"
+                )
+            else:
+                seed_val: int | None = None
+                if wheel_seed_str.strip():
+                    try:
+                        seed_val = int(wheel_seed_str.strip())
+                    except ValueError:
+                        st.warning("⚠️ 種子必須是整數,已忽略改用 sorted 排序。")
+                try:
+                    wheel_tickets = pick_abbreviated_wheel(wheel_pool, seed=seed_val)
+                except (ValueError, TypeError) as exc:
+                    st.error(f"❌ {exc}")
+                else:
+                    st.success(
+                        f"✅ 已產生 {len(wheel_tickets)} 注 — "
+                        f"保證 {WHEEL_GUARANTEE_T} 中 {WHEEL_GUARANTEE_T} 至少 {WHEEL_GUARANTEE_P} 注命中"
+                    )
+                    wheel_header = "| # | 號碼 |\n|---|---|\n"
+                    wheel_rows = []
+                    for idx, ticket in enumerate(wheel_tickets, start=1):
+                        nums_str = " ".join(f"`{n:02d}`" for n in ticket)
+                        wheel_rows.append(f"| {idx} | {nums_str} |")
+                    st.markdown(wheel_header + "\n".join(wheel_rows))
+                    st.caption(
+                        f"成本:{len(wheel_tickets)} × NT$ {UNIT_PRICE_TWD} = "
+                        f"**NT$ {len(wheel_tickets) * UNIT_PRICE_TWD}**"
+                    )
 
     # --- Main panel ---------------------------------------------------------------
 
