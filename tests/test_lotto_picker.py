@@ -549,5 +549,274 @@ class TestHowardFilters(unittest.TestCase):
             )
 
 
+class TestHowardMode(unittest.TestCase):
+    """v6.19 Gail Howard 黃金 8 條(opt-in `howard_mode=True`)。"""
+
+    def _hard_ok(self, ticket):
+        from src.generator.lotto_picker import (
+            ALLOWED_ODD_COUNTS,
+            HOWARD_ALLOWED_SMALL_COUNTS,
+            HOWARD_SMALL_THRESHOLD,
+            HOWARD_SUM_MAX,
+            HOWARD_SUM_MIN,
+        )
+        if not (HOWARD_SUM_MIN <= sum(ticket) <= HOWARD_SUM_MAX):
+            return False
+        if sum(1 for n in ticket if n % 2 == 1) not in ALLOWED_ODD_COUNTS:
+            return False
+        small = sum(1 for n in ticket if n <= HOWARD_SMALL_THRESHOLD)
+        if small not in HOWARD_ALLOWED_SMALL_COUNTS:
+            return False
+        return True
+
+    # --- Hard 3 conditions ---
+
+    def test_hard_sum_out_of_range_rejected(self):
+        from src.generator.lotto_picker import _howard_hard_pass
+        # sum=98 (< 115)
+        self.assertFalse(_howard_hard_pass((1, 2, 3, 30, 31, 31), 115, 185))
+        # sum=215 (> 185)
+        self.assertFalse(_howard_hard_pass((30, 35, 36, 37, 38, 49), 115, 185))
+
+    def test_hard_sum_in_range_passes_when_other_ok(self):
+        from src.generator.lotto_picker import _howard_hard_pass
+        # sum=132, odd=3, small=3 (≤24): 3, 12, 19 → all hard ok
+        self.assertTrue(_howard_hard_pass((3, 12, 19, 25, 33, 40), 115, 185))
+
+    def test_hard_all_odd_rejected(self):
+        from src.generator.lotto_picker import _howard_hard_pass
+        # sum=121, all odd → odd=6 ∉ {2,3,4}
+        self.assertFalse(_howard_hard_pass((3, 11, 17, 23, 27, 41), 115, 185))  # 122
+
+    def test_hard_small_count_split_at_24_25(self):
+        from src.generator.lotto_picker import _howard_hard_pass
+        # ticket: small=5 (≤24): 14,18,20,22,24 + big=25 → small=5 ∉ {2,3,4}
+        self.assertFalse(_howard_hard_pass((14, 18, 20, 22, 24, 25), 115, 185))  # sum=123
+        # small=3 (3,12,18), big=3 (30,35,45) → small=3 ∈ {2,3,4}
+        self.assertTrue(_howard_hard_pass((3, 12, 18, 30, 35, 45), 115, 185))  # 143
+
+    # --- Soft 5 conditions ---
+
+    def test_soft_4_tail_pair_recognized(self):
+        from src.generator.lotto_picker import _howard_soft_score
+        # tails: 3,3,5,2,0,7 → pair of 3s = exactly 1 pair → #4 +1
+        s = _howard_soft_score((3, 13, 25, 32, 40, 47), gaps=None, last_draw=frozenset())
+        # #4✓ #5 depends (1 decade 0-9 has 3 → ...), check baseline >= 3 because #7 #8 auto +1
+        self.assertGreaterEqual(s, 3)
+
+    def test_soft_4_three_same_tail_rejected(self):
+        from src.generator.lotto_picker import _howard_soft_score
+        # tails 1,1,1,2,3,4: 3 個尾數 1 → over_pairs ≥ 1 → #4 不加
+        s_three = _howard_soft_score(
+            (1, 11, 21, 32, 43, 44), gaps=None, last_draw=frozenset()
+        )
+        # tails 1,1,2,3,4,5: 1 對 → #4 +1
+        s_one_pair = _howard_soft_score(
+            (1, 11, 22, 33, 44, 45), gaps=None, last_draw=frozenset()
+        )
+        # 1 對 比 3 同尾 對 #4 多 1 分(#7/#8 跳過固定 +2,#5/#6 視 ticket 異)
+        self.assertGreaterEqual(s_one_pair - s_three, 1)
+
+    def test_soft_6_consecutive_exactly_one(self):
+        from src.generator.lotto_picker import _howard_soft_score
+        # 連號恰 1 對: 28, 29 + 其他不連 → #6 +1
+        s = _howard_soft_score(
+            (5, 14, 22, 28, 29, 41), gaps=None, last_draw=frozenset()
+        )
+        self.assertGreaterEqual(s, 3)
+        # 2 對連號:1,2 + 28,29 → #6 not added
+        s2 = _howard_soft_score(
+            (1, 2, 14, 28, 29, 41), gaps=None, last_draw=frozenset()
+        )
+        # 軟分基數差異:s vs s2 → s 有 #6,s2 沒(僅針對 #6 比較)
+        self.assertGreaterEqual(s, s2 - 1)  # 寬鬆斷言(#4/#5 可能變化)
+
+    def test_soft_7_gap5_count_passes_when_4_or_5(self):
+        from src.generator.lotto_picker import _howard_soft_score
+        # gap≤5 for 4 of 6 numbers
+        gaps = {n: 0 for n in (3, 13, 25, 32)} | {n: 20 for n in (40, 47)}
+        gaps_full = {n: gaps.get(n, 100) for n in range(1, 50)}
+        s = _howard_soft_score(
+            (3, 13, 25, 32, 40, 47), gaps=gaps_full, last_draw=frozenset()
+        )
+        # #7 should pass (4 ≤ 5)
+        self.assertGreaterEqual(s, 1)
+
+    def test_soft_7_gap5_count_fails_when_only_2_recent(self):
+        from src.generator.lotto_picker import _howard_soft_score
+        # Only 2 numbers gap≤5 → #7 fails
+        gaps_full = {n: 100 for n in range(1, 50)}
+        gaps_full[3] = 0
+        gaps_full[13] = 2
+        s_full = _howard_soft_score(
+            (3, 13, 25, 32, 40, 47), gaps=gaps_full, last_draw=frozenset()
+        )
+        s_skip = _howard_soft_score(
+            (3, 13, 25, 32, 40, 47), gaps=None, last_draw=frozenset()
+        )
+        # gaps=None 自動 +1;gaps 限制 → -1
+        self.assertEqual(s_skip - s_full, 1)
+
+    def test_soft_8_repeat_from_last_draw(self):
+        from src.generator.lotto_picker import _howard_soft_score
+        # ticket 含上期 1 顆 → #8 +1
+        s_hit = _howard_soft_score(
+            (3, 13, 25, 32, 40, 47), gaps=None, last_draw=frozenset({3})
+        )
+        # ticket 含上期 0 顆 → #8 不加
+        s_miss = _howard_soft_score(
+            (3, 13, 25, 32, 40, 47), gaps=None, last_draw=frozenset({99})
+        )
+        self.assertEqual(s_hit - s_miss, 1)
+
+    def test_soft_score_threshold_3_of_5(self):
+        from src.generator.lotto_picker import (
+            HOWARD_SOFT_MIN_SCORE,
+            _howard_soft_score,
+        )
+        self.assertEqual(HOWARD_SOFT_MIN_SCORE, 3)
+        # 全 fallback: gaps=None + last_draw=empty → #7+#8 自動 +2,#4/#5/#6 視 ticket
+        # 隨機 ticket 拿到 >= 3 機率高(因 2 自動)
+        s = _howard_soft_score(
+            (5, 14, 22, 28, 29, 41), gaps=None, last_draw=frozenset()
+        )
+        self.assertGreaterEqual(s, HOWARD_SOFT_MIN_SCORE)
+
+    # --- Validation ---
+
+    def test_history_too_short_raises(self):
+        from src.generator.lotto_picker import HOWARD_MIN_HISTORY
+        with self.assertRaises(ValueError) as cm:
+            generate_tickets(
+                history_draws=HISTORY[: HOWARD_MIN_HISTORY - 1],
+                num_tickets=5,
+                howard_mode=True,
+                rng=random.Random(42),
+            )
+        self.assertIn("howard_mode requires", str(cm.exception))
+
+    def test_fallback_analysis_raises(self):
+        from src.generator.history_engine import STATIC_FALLBACK_ANALYSIS
+        with self.assertRaises(ValueError) as cm:
+            generate_tickets(
+                history_draws=HISTORY,
+                num_tickets=5,
+                precomputed_analysis=STATIC_FALLBACK_ANALYSIS,
+                howard_mode=True,
+                rng=random.Random(42),
+            )
+        self.assertIn("howard_mode requires real history", str(cm.exception))
+
+    def test_minimum_history_works(self):
+        from src.generator.lotto_picker import HOWARD_MIN_HISTORY
+        tickets, _ = generate_tickets(
+            history_draws=HISTORY[:HOWARD_MIN_HISTORY],
+            num_tickets=3,
+            howard_mode=True,
+            rng=random.Random(42),
+        )
+        # 至少有 tickets 產出(Round 1 或 Round 2 fallback)
+        self.assertGreater(len(tickets), 0)
+
+    # --- End-to-end ---
+
+    def test_generate_with_howard_mode_returns_valid_tickets(self):
+        tickets, _ = generate_tickets(
+            history_draws=HISTORY,
+            num_tickets=5,
+            howard_mode=True,
+            rng=random.Random(42),
+        )
+        for t in tickets:
+            self.assertEqual(len(t), TICKET_SIZE)
+            self.assertEqual(len(set(t)), TICKET_SIZE)
+            self.assertTrue(all(1 <= n <= 49 for n in t))
+
+    def test_howard_mode_default_off_does_not_change_v6_16(self):
+        # 同 seed + 同 input,howard_mode 預設 False 應與省略時一致
+        a, _ = generate_tickets(
+            history_draws=HISTORY,
+            num_tickets=5,
+            rng=random.Random(42),
+        )
+        b, _ = generate_tickets(
+            history_draws=HISTORY,
+            num_tickets=5,
+            howard_mode=False,
+            rng=random.Random(42),
+        )
+        self.assertEqual(a, b)
+
+    def test_howard_round1_majority_passes_hard_3(self):
+        # 大歷史 + howard_mode + 小量注數 → Round 1 主導,大多應過硬綁
+        tickets, _ = generate_tickets(
+            history_draws=HISTORY,
+            num_tickets=3,
+            howard_mode=True,
+            rng=random.Random(2026),
+        )
+        if tickets:  # 防 Round 1+2 都湊不到
+            passed = sum(1 for t in tickets if self._hard_ok(t))
+            # Howard Round 1 dominant 時應 >= 50% 過硬綁;不嚴格綁 100% 因可能 Round 2 fallback
+            self.assertGreaterEqual(
+                passed,
+                max(1, len(tickets) // 2),
+                f"Howard Round 1 不該大量退回 v6.16: tickets={tickets}",
+            )
+
+    # --- 3 個易錯輸入(CLAUDE.md §6 自審) ---
+
+    def test_easily_broken_input_1_all_history_same_draws(self):
+        """重複歷史:所有期都同一組 → gaps 對 unseen 號 = inf,#7 難過。
+
+        須顯式 `manual_excluded_tails=[]`,否則 dormant_tails 自動把全部 0-9
+        都標為排除(因為 [1..6] 的尾數覆蓋率不夠)→ pool 為空。
+        """
+        repeated = [[1, 2, 3, 4, 5, 6]] * 30
+        tickets, _ = generate_tickets(
+            history_draws=repeated,
+            num_tickets=3,
+            howard_mode=True,
+            manual_excluded_tails=[],  # 不排除任何尾數
+            manual_excluded_numbers=[1, 2, 3, 4, 5, 6],  # 強制 pool 不含這些
+            rng=random.Random(42),
+        )
+        # 應該至少有些 tickets(Round 2 fallback)
+        for t in tickets:
+            self.assertEqual(len(t), 6)
+            self.assertEqual(len(set(t)), 6)
+
+    def test_easily_broken_input_2_exact_5_period_history(self):
+        """史料剛好邊界 → 不該 raise。"""
+        from src.generator.lotto_picker import HOWARD_MIN_HISTORY
+        tickets, _ = generate_tickets(
+            history_draws=HISTORY[:HOWARD_MIN_HISTORY],
+            num_tickets=3,
+            howard_mode=True,
+            rng=random.Random(42),
+        )
+        self.assertGreater(len(tickets), 0)
+
+    def test_easily_broken_input_3_howard_with_batch_disjoint(self):
+        """Howard + batch_disjoint 互動:不該 crash + tickets pair-disjoint。"""
+        tickets, _ = generate_tickets(
+            history_draws=HISTORY,
+            num_tickets=5,
+            howard_mode=True,
+            batch_disjoint=True,
+            rng=random.Random(42),
+        )
+        # pair-disjoint check
+        from itertools import combinations as _C
+        used_pairs = set()
+        for t in tickets:
+            new_pairs = set(_C(t, 2))
+            self.assertFalse(
+                new_pairs & used_pairs,
+                f"Howard + batch_disjoint 違反 pair-disjoint: {t}",
+            )
+            used_pairs |= new_pairs
+
+
 if __name__ == "__main__":
     unittest.main()

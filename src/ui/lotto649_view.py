@@ -32,6 +32,18 @@ from src.generator.history_engine import (
 from src.generator.lotto_picker import (
     ALLOWED_ODD_COUNTS,
     BIG_THRESHOLD,
+    HOWARD_ALLOWED_SMALL_COUNTS,
+    HOWARD_EXACT_CONSEC_PAIRS,
+    HOWARD_EXACT_TAIL_PAIRS,
+    HOWARD_GAP5_ALLOWED_COUNTS,
+    HOWARD_GAP5_THRESHOLD,
+    HOWARD_MAX_EMPTY_DECADES,
+    HOWARD_MIN_HISTORY,
+    HOWARD_REPEAT_FROM_LAST,
+    HOWARD_SMALL_THRESHOLD,
+    HOWARD_SOFT_MIN_SCORE,
+    HOWARD_SUM_MAX,
+    HOWARD_SUM_MIN,
     MAX_BASEMENT_PER_TICKET,
     MAX_CONSECUTIVE_PAIRS,
     MAX_PRIME_COUNT,
@@ -416,6 +428,17 @@ def render(sample_csv_path: Path) -> None:
             key="l649_batch_disjoint",
         )
 
+        howard_mode_ui = st.checkbox(
+            "🎯 霍華德嚴格模式（黃金 8 條）",
+            value=False,
+            help=(
+                "Gail Howard《Lottery Master Guide》八大條件。"
+                "需 ≥ "
+                f"{HOWARD_MIN_HISTORY} 期動態歷史；Round 2 fallback 自動退回 v6.16。"
+            ),
+            key="l649_howard_mode",
+        )
+
         seed = st.number_input(
             "隨機種子（0 = 不固定）", min_value=0, max_value=10_000_000,
             value=0, step=1, key="l649_seed",
@@ -428,13 +451,34 @@ def render(sample_csv_path: Path) -> None:
     with st.expander("📐 大樂透 七大濾網規則(v6.16 加入 Howard #4 + #11)"):
         st.markdown(
             f"""
-- **質數**：`{MIN_PRIME_COUNT} ≤ 質數 ≤ {MAX_PRIME_COUNT}`（質數集 {{2,3,5,7,11,13,17,19,23,29,31,37,41,43,47}}）
-- **連號**：`連號對數 ≤ {MAX_CONSECUTIVE_PAIRS}`
-- **動態和值**：`Phase 1 計算區間` (失敗回 `{SUM_MIN}-{SUM_MAX}`)
-- **奇偶**：`奇數 ∈ {sorted(ALLOWED_ODD_COUNTS)}`
-- **大數**：`> {BIG_THRESHOLD} 至少 {MIN_BIG_COUNT} 個`
+- **質數**：`{MIN_PRIME_COUNT} ≤ 質數 ≤ {MAX_PRIME_COUNT}`(質數集 {{2,3,5,7,11,13,17,19,23,29,31,37,41,43,47}})
+- **連號**:`連號對數 ≤ {MAX_CONSECUTIVE_PAIRS}`
+- **動態和值**:`Phase 1 計算區間` (失敗回 `{SUM_MIN}-{SUM_MAX}`)
+- **奇偶**:`奇數 ∈ {sorted(ALLOWED_ODD_COUNTS)}`
+- **大數**:`> {BIG_THRESHOLD} 至少 {MIN_BIG_COUNT} 個`
 - **字頭追蹤**(Howard #4):`至少 {MIN_EMPTY_DECADES} 個字頭區間完全空`(實測 577 期歷史命中 87.0%)
 - **谷底陷阱**(Howard #11):`極冷號(engine cold list) ≤ {MAX_BASEMENT_PER_TICKET} 顆`(實測命中 85.8%)
+"""
+        )
+
+    with st.expander("🎯 霍華德黃金 8 條(v6.19 opt-in)"):
+        st.markdown(
+            f"""
+**Source**: Gail Howard《Lottery Master Guide》& 《Lotto Wheel Five to Win》
+
+**硬綁(3 條全過)**
+1. **總和**:`sum ∈ [{HOWARD_SUM_MIN}, {HOWARD_SUM_MAX}]`(SMA±30 clamp 在此區間)
+2. **奇偶**:`奇數 ∈ {sorted(ALLOWED_ODD_COUNTS)}`(沿用 v6.16)
+3. **大小**:`小數(≤ {HOWARD_SMALL_THRESHOLD}) ∈ {sorted(HOWARD_ALLOWED_SMALL_COUNTS)}`(切分 24/25,雙向)
+
+**軟分(≥ {HOWARD_SOFT_MIN_SCORE}/5 通過,史料不足條目自動 +1)**
+4. **同尾恰 1 對**:有且僅有 1 個尾數出現 2 次,其餘唯一(`{HOWARD_EXACT_TAIL_PAIRS}`)
+5. **字頭空缺**:`空字頭數 ∈ [{MIN_EMPTY_DECADES}, {HOWARD_MAX_EMPTY_DECADES}]`
+6. **連號恰 1 對**:`連號對數 == {HOWARD_EXACT_CONSEC_PAIRS}`
+7. **遺漏黃金區**:`gap ≤ {HOWARD_GAP5_THRESHOLD} 的顆數 ∈ {sorted(HOWARD_GAP5_ALLOWED_COUNTS)}`
+8. **連莊號**:`與上期(draws[0])共 {HOWARD_REPEAT_FROM_LAST} 顆`
+
+**降級**:史料 < {HOWARD_MIN_HISTORY} 期 或 `is_fallback=True` → 自動退回 v6.16 + warning。
 """
         )
 
@@ -556,6 +600,23 @@ def render(sample_csv_path: Path) -> None:
     keys_arg = manual_keys
     if batch_disjoint and (manual_keys or analysis.auto_keys):
         st.info("🧩 批次不重複模式已停用膽碼，確保組與組之間 6 號完全不重複。")
+
+    # v6.19 Howard 模式降級檢查(§1 Fail Loud):史料 < 5 期 或 fallback → 強制關閉
+    howard_active = howard_mode_ui
+    if howard_mode_ui and (len(history) < HOWARD_MIN_HISTORY or analysis.is_fallback):
+        reason = (
+            f"史料僅 {len(history)} 期(< {HOWARD_MIN_HISTORY})"
+            if len(history) < HOWARD_MIN_HISTORY
+            else "目前為靜態 fallback、無動態訊號"
+        )
+        st.warning(
+            f"⚠️ **Howard 模式需 ≥ {HOWARD_MIN_HISTORY} 期歷史 + 動態訊號**({reason}),"
+            "已自動降回 v6.16 七大濾網。"
+        )
+        howard_active = False
+    if howard_active:
+        st.info("🎯 **Howard 嚴格模式啟用**:Round 1 套用黃金 8 條;Round 2 fallback 退回 v6.16。")
+
     rng = random.Random(seed) if seed else None
     try:
         tickets, _ = generate_tickets(
@@ -567,6 +628,7 @@ def render(sample_csv_path: Path) -> None:
             manual_sum_range=manual_sum_range,
             precomputed_analysis=analysis,
             batch_disjoint=batch_disjoint,
+            howard_mode=howard_active,
             rng=rng,
         )
     except ValueError as exc:

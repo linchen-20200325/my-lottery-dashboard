@@ -158,6 +158,15 @@ if parse_csv_latest_date(history) < expected_latest_draw(now, {1, 4}):
 | 18 | pair-disjoint 模式:膽碼 ≤ 1 顆 | 邏輯互斥(2 顆膽會強制 key-pair 重複) | `lotto_picker.py:319-324` |
 | 19 | gap (遺漏期數) ∈ [0, len(history)] | 物理定義 | `history_engine._gaps()` |
 | 20 | gap_std floor = `min_std = 1.0` | 防 Z-Score /0 | `history_engine.py:203` |
+| 21 | **Howard 模式**:sum ∈ [115, 185] | Gail Howard《Lottery Master Guide》#1 | `lotto_picker.py` `HOWARD_SUM_MIN/MAX` |
+| 22 | **Howard 模式**:小數(≤24)∈ {2, 3, 4} | Howard #3 切分 24/25 雙向 | `lotto_picker.py` `HOWARD_SMALL_THRESHOLD/HOWARD_ALLOWED_SMALL_COUNTS` |
+| 23 | **Howard 模式**:同尾恰 1 對(軟分) | Howard #4 | `_howard_soft_score()` |
+| 24 | **Howard 模式**:字頭空 1-2 個(軟分) | Howard #5 | `HOWARD_MAX_EMPTY_DECADES` 配 `MIN_EMPTY_DECADES` |
+| 25 | **Howard 模式**:連號恰 1 對(軟分) | Howard #6 | `HOWARD_EXACT_CONSEC_PAIRS` |
+| 26 | **Howard 模式**:gap≤5 顆數 ∈ {4, 5}(軟分) | Howard #7 | `HOWARD_GAP5_THRESHOLD/ALLOWED_COUNTS` |
+| 27 | **Howard 模式**:含上期 1 顆(軟分) | Howard #8 | `HOWARD_REPEAT_FROM_LAST` |
+| 28 | **Howard 模式**:軟分 ≥ 3/5 才通過 | 平衡硬綁與彈性 | `HOWARD_SOFT_MIN_SCORE` |
+| 29 | **Howard 模式**:史料 ≥ 5 期 + 非 fallback,否則 raise | §1 Fail Loud(UI 端先擋並降回 v6.16) | `generate_tickets()` |
 
 ### 3.3 反捏造(Anti-Fabrication)
 
@@ -183,6 +192,16 @@ if parse_csv_latest_date(history) < expected_latest_draw(now, {1, 4}):
 - `MAX_DRAWS_PER_MONTH = 8` / `MONTHS_BUFFER = 2` 取代 `(periods + 7) // 8 + 2`
 
 **已落地**(v6.8):兩 engine 的 `STATIC_FALLBACK_ANALYSIS` 上方加 derivation block,說明 `hot_threshold=2.0`(= `DEFAULTS["hot_threshold_floor"]`)與 `cold_threshold=15.0`(= 每號約 8 期出一次 × `μ + 1.5σ` 保守估算)的來源。
+
+**已落地**(v6.19)— Gail Howard 黃金 8 條(opt-in `howard_mode=True`,僅大樂透):
+- `HOWARD_SUM_MIN/MAX = 115/185`(#1)、`HOWARD_SMALL_THRESHOLD = 24` + `HOWARD_ALLOWED_SMALL_COUNTS = {2,3,4}`(#3)— 來源 Gail Howard《Lottery Master Guide》
+- `HOWARD_EXACT_TAIL_PAIRS = 1`(#4)、`HOWARD_MAX_EMPTY_DECADES = 2`(#5,配 v6.16 `MIN_EMPTY_DECADES`)、`HOWARD_EXACT_CONSEC_PAIRS = 1`(#6)
+- `HOWARD_GAP5_THRESHOLD = 5` + `HOWARD_GAP5_ALLOWED_COUNTS = {4,5}`(#7)、`HOWARD_REPEAT_FROM_LAST = 1`(#8)
+- `HOWARD_SOFT_MIN_SCORE = 3`(5 條軟分通過閾值;史料不足條目自動 +1,基數不變)
+- `HOWARD_MIN_HISTORY = 5`(史料不足 → §1 Fail Loud raise;UI 端先擋並降回 v6.16 + warn)
+- Round 1 套 Howard;Round 2/3 fallback 退回 v6.16 五大濾網(plan 規定)
+- v6.16 谷底陷阱 (`MAX_BASEMENT_PER_TICKET = 1`) 在 Howard 模式仍生效(雙重保險)
+- 全部都在 `src/generator/lotto_picker.py` 模組頂常數區,UI `src/ui/lotto649_view.py` 透過 import 顯示條文
 
 ### 3.4 統計異常偵測
 
