@@ -116,6 +116,30 @@ my-lottery-2026/
   - 新測試：`tests/test_review_findings.py` 14 個 cases — 3 個風險各帶 raise 路徑 + 兼容性正例
   - 驗證：144 unit tests 全綠（134 → 144，+10）；既有引擎/scraper/UI 零退化
 
+## 精簡包牌 — Abbreviated Wheel 4保3(v6.20)
+- [x] **使用者請求「聰明組合法」加開** ✅ 2026-06-26
+  - 來源:Gail Howard《Lotto Wheel Five to Win》— Wheeling Systems(現有膽拖 = Key Number Wheel,本次補的是 Abbreviated Wheel,精簡覆蓋設計)
+  - 對齊四問(CLAUDE.md §7):資料來源 = 使用者自選 12 號 pool;延遲不變(純算法,zero-network);邊界 = 池長 ≠ 12 / 重複 / 範圍外一律 raise(§1);實測 greedy 上限 8 注(L(12,6,4,3) ≤ 8,可能 7 但需 ILP 驗證)
+  - 方案(3 題決策、全採建議):4保3 保證 + 只大樂透 + 獨立 expander
+  - **新模組 `src/generator/abbreviated_wheel.py`**:
+    - `WHEEL_12_4_OF_4_3` 常數:8 注 6-tuple of 0..11 indices,greedy set-cover seed=0 算出
+    - `pick_abbreviated_wheel(pool, seed=None)`:輸入 12 號 sorted/shuffled,輸出 8 注 6-tuple
+    - 公開常數 `WHEEL_SIZE=12 / WHEEL_TICKET_COUNT=8 / WHEEL_GUARANTEE_T=4 / WHEEL_GUARANTEE_P=3`
+    - §1 Fail Loud:長度 / 範圍 / 重複 / 非 int / bool 偽裝 一律 raise
+    - 不變量 assert:每注 6 unique ∈ [1, 49]
+  - **新測試 `tests/test_abbreviated_wheel.py` 18 測**:
+    - 4保3 暴搜:遍歷 C(12,4)=495 個 4-subset,每個必有 ≥1 注 ≥3 交集
+    - 邊界:11/13 號 raise、重複 raise、out-of-range raise、bool 拒收、float 拒收、set 拒收
+    - seed 重現性 + 排序確定性 + 不同 seed 不同輸出
+    - 池邊角 + 中獎號落邊界 仍覆蓋
+  - **UI(`src/ui/lotto649_view.py`)**:
+    - Howard expander 之後加新 expander「🎯 精簡包牌(Abbreviated Wheel, 4保3)— v6.20」
+    - multiselect 選 12 號 + 可選 seed text input + 產生按鈕
+    - 出 8 注表格 + 成本 NT$ 400 caption + 「不過濾網」說明(避免破壞 covering 數學保證)
+  - **CLAUDE.md §3.2**:加 rules #30-#32(N=12 / k=6 / 4保3 covering 屬性)
+  - 驗證:18/18 新測試綠;245 全測試套件全綠無回歸;憲法 checker 7/7 PASS;Streamlit 無 import 退化
+  - 變更檔案:`src/generator/abbreviated_wheel.py`(新)、`src/ui/lotto649_view.py`、`tests/test_abbreviated_wheel.py`(新)、`STATE.md`、`CLAUDE.md`
+
 ## 霍華德嚴格模式 — 黃金 8 條 opt-in(v6.19)
 - [x] **使用者請求「請幫我修改策略 蓋兒.霍華德:黃金選號條件檢核表」**  ✅ 2026-06-26
   - 來源:Gail Howard《Lottery Master Guide》& 《Lotto Wheel Five to Win》— 8 條黃金規則 + 聰明組合法

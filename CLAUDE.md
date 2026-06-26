@@ -167,6 +167,9 @@ if parse_csv_latest_date(history) < expected_latest_draw(now, {1, 4}):
 | 27 | **Howard 模式**:含上期 1 顆(軟分) | Howard #8 | `HOWARD_REPEAT_FROM_LAST` |
 | 28 | **Howard 模式**:軟分 ≥ 3/5 才通過 | 平衡硬綁與彈性 | `HOWARD_SOFT_MIN_SCORE` |
 | 29 | **Howard 模式**:史料 ≥ 5 期 + 非 fallback,否則 raise | §1 Fail Loud(UI 端先擋並降回 v6.16) | `generate_tickets()` |
+| 30 | **Abbreviated Wheel**:池大小 = 12、每注 = 6、覆蓋 t=4 / 保證 p=3(4保3) | 自家 greedy set-cover 計算(L(12,6,4,3) ≤ 8;Gail Howard《Lotto Wheel Five to Win》理論依據) | `abbreviated_wheel.py` `WHEEL_SIZE/WHEEL_GUARANTEE_T/WHEEL_GUARANTEE_P` |
+| 31 | **Abbreviated Wheel**:8 注覆蓋全 495 個 4-subset | 暴搜測試驗證 | `tests/test_abbreviated_wheel.py::TestWheelInvariant::test_4_in_4_guarantee_3_exhaustive` |
+| 32 | **Abbreviated Wheel**:不過 v6.16/Howard 濾網 | 濾網會破壞 covering 數學保證;故意不混用 | `abbreviated_wheel.py` module docstring |
 
 ### 3.3 反捏造(Anti-Fabrication)
 
