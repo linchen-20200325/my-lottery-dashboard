@@ -193,11 +193,22 @@ def render(sample_csv_path: Path) -> None:
                 "貼上 CSV 或 JSON", height=160, key="l649_paste",
             )
 
-        preview_limit = st.slider(
-            "📋 預覽近 N 期", 1, 20, 5,
-            help="主面板頂部會顯示最近 N 期開獎，用來驗證資料是否正確下載/上傳。",
-            key="l649_preview",
-        )
+        if hasattr(st, "pills"):
+            _preview_choice = st.pills(
+                "📋 預覽近 N 期",
+                options=[1, 3, 5, 10, 15, 20],
+                selection_mode="single",
+                default=5,
+                key="l649_preview_pills",
+                help="主面板頂部會顯示最近 N 期開獎,用來驗證資料是否正確下載/上傳。",
+            )
+            preview_limit = int(_preview_choice) if _preview_choice else 5
+        else:
+            preview_limit = st.slider(
+                "📋 預覽近 N 期", 1, 20, 5,
+                help="主面板頂部會顯示最近 N 期開獎,用來驗證資料是否正確下載/上傳。",
+                key="l649_preview",
+            )
 
         st.markdown("**🤖 自動更新歷史資料**")
         st.link_button(
@@ -221,30 +232,77 @@ def render(sample_csv_path: Path) -> None:
         )
 
         st.markdown("#### 📈 動態和值 (SMA)")
-        sma_window = st.slider(
-            "SMA 視窗 (期數)", 5, 30, DEFAULTS["sum_sma_window"], key="l649_sma",
-        )
-        range_pad = st.slider(
-            "和值 ±pad", 10, 60, DEFAULTS["sum_range_pad"], key="l649_pad",
-        )
+        if hasattr(st, "pills"):
+            _sma_choice = st.pills(
+                "SMA 視窗 (期數)",
+                options=[5, 10, 15, 20, 25, 30],
+                selection_mode="single",
+                default=DEFAULTS["sum_sma_window"],
+                key="l649_sma_pills",
+            )
+            sma_window = int(_sma_choice) if _sma_choice else DEFAULTS["sum_sma_window"]
+            _pad_choice = st.pills(
+                "和值 ±pad",
+                options=[10, 20, 30, 40, 50, 60],
+                selection_mode="single",
+                default=DEFAULTS["sum_range_pad"],
+                key="l649_pad_pills",
+            )
+            range_pad = int(_pad_choice) if _pad_choice else DEFAULTS["sum_range_pad"]
+        else:
+            sma_window = st.slider(
+                "SMA 視窗 (期數)", 5, 30, DEFAULTS["sum_sma_window"], key="l649_sma",
+            )
+            range_pad = st.slider(
+                "和值 ±pad", 10, 60, DEFAULTS["sum_range_pad"], key="l649_pad",
+            )
 
         st.markdown("#### 🎚️ 尾數訊號")
         st.caption(
             "↗ **拉高 = 自動排除少**(條件變嚴格,較少尾數被列為過熱/死寂) ｜ "
             "↘ **拉低 = 自動排除多**(條件變寬鬆,更多尾數被列入排除)"
         )
-        overheat_recent = st.slider(
-            "過熱觀察期", 1, 10, DEFAULTS["overheat_recent_periods"], key="l649_oh_r",
-            help="觀察近 N 期的尾數出現次數。N 越小 → 越快反應近期熱點 → 越容易判過熱。",
-        )
-        overheat_min = st.slider(
-            "過熱判定次數", 1, 10, DEFAULTS["overheat_min_count"], key="l649_oh_m",
-            help="觀察期內出現 ≥ N 次即判為過熱。**N 拉到 4-6 = 排除少**,N=2-3 = 排除多。",
-        )
-        dormant_periods = st.slider(
-            "死寂判定期", 5, 30, DEFAULTS["dormant_periods"], key="l649_dorm",
-            help="連續 N 期未出現即判為死寂。**N 拉到 12-20 = 排除少**,N=5-8 = 排除多。",
-        )
+        if hasattr(st, "pills"):
+            _oh_r_choice = st.pills(
+                "過熱觀察期",
+                options=[1, 2, 3, 4, 5, 6, 7, 8, 10],
+                selection_mode="single",
+                default=DEFAULTS["overheat_recent_periods"],
+                key="l649_oh_r_pills",
+                help="觀察近 N 期的尾數出現次數。N 越小 → 越快反應近期熱點 → 越容易判過熱。",
+            )
+            overheat_recent = int(_oh_r_choice) if _oh_r_choice else DEFAULTS["overheat_recent_periods"]
+            _oh_m_choice = st.pills(
+                "過熱判定次數",
+                options=[1, 2, 3, 4, 5, 6, 7, 8, 10],
+                selection_mode="single",
+                default=DEFAULTS["overheat_min_count"],
+                key="l649_oh_m_pills",
+                help="觀察期內出現 ≥ N 次即判為過熱。**N 拉到 4-6 = 排除少**,N=2-3 = 排除多。",
+            )
+            overheat_min = int(_oh_m_choice) if _oh_m_choice else DEFAULTS["overheat_min_count"]
+            _dorm_choice = st.pills(
+                "死寂判定期",
+                options=[5, 8, 10, 12, 15, 20, 25, 30],
+                selection_mode="single",
+                default=DEFAULTS["dormant_periods"],
+                key="l649_dorm_pills",
+                help="連續 N 期未出現即判為死寂。**N 拉到 12-20 = 排除少**,N=5-8 = 排除多。",
+            )
+            dormant_periods = int(_dorm_choice) if _dorm_choice else DEFAULTS["dormant_periods"]
+        else:
+            overheat_recent = st.slider(
+                "過熱觀察期", 1, 10, DEFAULTS["overheat_recent_periods"], key="l649_oh_r",
+                help="觀察近 N 期的尾數出現次數。N 越小 → 越快反應近期熱點 → 越容易判過熱。",
+            )
+            overheat_min = st.slider(
+                "過熱判定次數", 1, 10, DEFAULTS["overheat_min_count"], key="l649_oh_m",
+                help="觀察期內出現 ≥ N 次即判為過熱。**N 拉到 4-6 = 排除少**,N=2-3 = 排除多。",
+            )
+            dormant_periods = st.slider(
+                "死寂判定期", 5, 30, DEFAULTS["dormant_periods"], key="l649_dorm",
+                help="連續 N 期未出現即判為死寂。**N 拉到 12-20 = 排除少**,N=5-8 = 排除多。",
+            )
 
         st.markdown("#### 🎯 膽碼 / 排除 (覆寫)")
         key_mode = st.radio(

@@ -116,6 +116,22 @@ my-lottery-2026/
   - 新測試：`tests/test_review_findings.py` 14 個 cases — 3 個風險各帶 raise 路徑 + 兼容性正例
   - 驗證：144 unit tests 全綠（134 → 144，+10）；既有引擎/scraper/UI 零退化
 
+## UI:整數 slider → pills(v6.21)
+- [x] **使用者請求「所有條狀的 都改成數字按鈕」** ✅ 2026-06-26
+  - 範圍:大樂透 + 威力彩 各 6 個整數 slider(共 12 處)→ `st.pills` 快選
+  - 不動:`hot_sigma` / `cold_sigma`(浮點 step=0.1 候選太多)、和值 range slider(雙手柄)
+  - **大樂透(`src/ui/lotto649_view.py`)**:
+    - `preview_limit`(1-20,default 5)→ `[1, 3, 5, 10, 15, 20]`
+    - `sma_window`(5-30,default 10)→ `[5, 10, 15, 20, 25, 30]`
+    - `range_pad`(10-60,default 30)→ `[10, 20, 30, 40, 50, 60]`
+    - `overheat_recent`(1-10,default 3)→ `[1, 2, 3, 4, 5, 6, 7, 8, 10]`
+    - `overheat_min`(1-10,default 3)→ `[1, 2, 3, 4, 5, 6, 7, 8, 10]`
+    - `dormant_periods`(5-30,default 8)→ `[5, 8, 10, 12, 15, 20, 25, 30]`
+  - **威力彩(`src/ui/powerball_view.py`)**:同套,`range_pad` 因 default=25 改 `[10, 15, 20, 25, 30, 40, 50]`
+  - 每處保留 `if hasattr(st, "pills")` fallback 走原 slider,沿用 v6.18 注數 pill 的 pattern
+  - 驗證:245/245 全綠;憲法 7/7 PASS;`py_compile` 通過
+  - 變更檔案:`src/ui/lotto649_view.py`、`src/ui/powerball_view.py`、`STATE.md`
+
 ## 精簡包牌 — Abbreviated Wheel 4保3(v6.20)
 - [x] **使用者請求「聰明組合法」加開** ✅ 2026-06-26
   - 來源:Gail Howard《Lotto Wheel Five to Win》— Wheeling Systems(現有膽拖 = Key Number Wheel,本次補的是 Abbreviated Wheel,精簡覆蓋設計)
