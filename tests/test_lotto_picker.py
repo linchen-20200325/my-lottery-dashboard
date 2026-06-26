@@ -604,17 +604,18 @@ class TestHowardMode(unittest.TestCase):
         # #4✓ #5 depends (1 decade 0-9 has 3 → ...), check baseline >= 3 because #7 #8 auto +1
         self.assertGreaterEqual(s, 3)
 
-    def test_soft_4_no_tail_pair_zero_for_4(self):
+    def test_soft_4_three_same_tail_rejected(self):
         from src.generator.lotto_picker import _howard_soft_score
-        # all distinct tails: 1,2,3,4,5,6
-        s_with_pair = _howard_soft_score(
-            (3, 13, 22, 31, 40, 49), gaps=None, last_draw=frozenset()
-        )  # 同尾 3,3 = 1 對 ✓
-        s_without_pair = _howard_soft_score(
-            (1, 2, 3, 4, 5, 6), gaps=None, last_draw=frozenset()
-        )  # all unique tails 1,2,3,4,5,6 (also 5 consec — bad #6 too)
-        # 雖然 #4 兩者結果不同,#5/#6 也可能異;這裡只比較邊界
-        self.assertNotEqual(s_with_pair, -1)  # smoke test 取代精細比較
+        # tails 1,1,1,2,3,4: 3 個尾數 1 → over_pairs ≥ 1 → #4 不加
+        s_three = _howard_soft_score(
+            (1, 11, 21, 32, 43, 44), gaps=None, last_draw=frozenset()
+        )
+        # tails 1,1,2,3,4,5: 1 對 → #4 +1
+        s_one_pair = _howard_soft_score(
+            (1, 11, 22, 33, 44, 45), gaps=None, last_draw=frozenset()
+        )
+        # 1 對 比 3 同尾 對 #4 多 1 分(#7/#8 跳過固定 +2,#5/#6 視 ticket 異)
+        self.assertGreaterEqual(s_one_pair - s_three, 1)
 
     def test_soft_6_consecutive_exactly_one(self):
         from src.generator.lotto_picker import _howard_soft_score
