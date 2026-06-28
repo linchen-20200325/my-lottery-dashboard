@@ -24,35 +24,42 @@ my-lottery-dashboard/
 ├── streamlit_app.py              # 入口:st.tabs 雙分頁 → 各呼叫一個 view.render()
 ├── src/
 │   ├── ui/                       # ── 表現層(Streamlit widget + 容錯渲染)
-│   │   ├── lotto649_view.py      #   大樂透分頁(含 Howard 模式 + 精簡包牌,939 行)
-│   │   └── powerball_view.py     #   威力彩分頁(含第二區 bonus,728 行)
+│   │   ├── _view_base.py         #   ★SSOT 純 helper(expand_tails/freshness/provenance/rng;無 streamlit)
+│   │   ├── _widgets.py           #   ★SSOT 無狀態設定 widget 區段(zscore/sma/tail,key_prefix 參數化)
+│   │   ├── lotto649_view.py      #   大樂透分頁薄殼(Howard + 精簡包牌;委派 _view_base/_widgets)
+│   │   └── powerball_view.py     #   威力彩分頁薄殼(第二區 bonus;委派 _view_base/_widgets)
 │   ├── generator/                # ── 訊號 + 選號核心(stdlib-only)
-│   │   ├── history_engine.py     #   大樂透訊號:gap → Z-Score 冷熱 + SMA 動態和值
-│   │   ├── powerball_engine.py   #   威力彩訊號:主池 + 第二區雙池分析
-│   │   ├── lotto_picker.py       #   大樂透選號:五階段管線 + 五濾網 + Howard 8 條
-│   │   ├── powerball_picker.py   #   威力彩選號:五階段管線 + 五濾網 + 第二區
+│   │   ├── base_engine.py        #   ★SSOT 第一區五階段(gap/Z-Score/SMA/tail/auto_keys)+ 驗證
+│   │   ├── history_engine.py     #   大樂透訊號薄殼:委派 base_engine + 組 HistoryAnalysis
+│   │   ├── powerball_engine.py   #   威力彩訊號薄殼:委派 base_engine + 第二區 _bonus_analyze
+│   │   ├── base_picker.py        #   ★SSOT 選號共用骨架:validator + pool/雙膽 + 5 濾網 + 批次
+│   │   ├── lotto_picker.py       #   大樂透選號薄殼:委派 base_picker + Howard 8 條 plug-in
+│   │   ├── powerball_picker.py   #   威力彩選號薄殼:委派 base_picker + 第二區 _resolve_bonus
 │   │   └── abbreviated_wheel.py  #   精簡包牌:L(12,6,4,3) 4保3 greedy set-cover
 │   ├── data/                     # ── 載入 + 血緣 + 新鮮度
-│   │   ├── loader.py             #   大樂透 CSV/JSON 載入 + 逐列 schema 驗證
-│   │   ├── loader_powerball.py   #   威力彩 CSV/JSON 載入(額外驗第二區)
+│   │   ├── _dates.py             #   ★SSOT parse_csv_date(嚴格 strptime;provenance/freshness 共用)
+│   │   ├── _loader_base.py       #   ★SSOT 載入骨架(LoaderConfig 參數化;兩 loader 委派)
+│   │   ├── loader.py             #   大樂透 CSV/JSON 薄殼 + 逐列 schema 驗證
+│   │   ├── loader_powerball.py   #   威力彩 CSV/JSON 薄殼(額外驗第二區)
 │   │   ├── provenance.py         #   HistoryProvenance dataclass + additive 變體
 │   │   └── freshness.py          #   開獎日截止線 + CSV 落後偵測
 │   ├── analytics/                # ── 離線分析(主要 CLI;cost_calc 例外可上線)
 │   │   ├── cost_calc.py          #   包牌成本 comb(drag, 6-key) × NT$50
-│   │   ├── backtest.py           #   歷史命中率回測 + ROI(僅大樂透)
-│   │   └── metrics.py            #   compression_rate / survival_rate + Monte Carlo 對帳
+│   │   ├── backtest.py           #   歷史命中率回測 + ROI(吃 DomainConfig;威力彩 payout=None §1 不捏造)
+│   │   └── metrics.py            #   compression/survival + MC 對帳(吃 DomainConfig;濾網委派 base_picker)
 │   └── scraper/                  # ── 離線抓檔(僅 GitHub Actions / 本機,Cloud 不跑)
 │       ├── lotto649_downloader.py#   直打台彩 Lotto649Result API + retry + 增量合併
 │       └── powerball_downloader.py# 直打 SuperLotto638Result API(結構同上)
 ├── scripts/                      # ── 一次性 / CI 工具
 │   ├── check_constitution.py     #   憲法 CI checker(grep pandas/fillna/except:pass)
-│   ├── import_powerball_history.py # 【一次性,已執行完畢】v3.7 威力彩史料匯入
-│   ├── sanitize_legacy_dates.py  #   【一次性,已執行完畢】v3.7 合成日期清洗
-│   └── quick_merge.sh            #   §8.5 跳 PR 白名單直推腳本
+│   ├── quick_merge.sh            #   §8.5 跳 PR 白名單直推腳本
+│   └── archive/                  #   【一次性,已執行完畢,請勿再跑】v3.7 migration 腳本
+│       ├── import_powerball_history.py
+│       └── sanitize_legacy_dates.py
 ├── data/
 │   ├── lotto649.csv              # 大樂透歷史(append-only,newest-first)
 │   └── powerball.csv             # 威力彩歷史(同上)
-├── tests/                        # 18 個 unittest 檔(stdlib unittest)
+├── tests/                        # 21 個 unittest 檔 / 282 測試(stdlib unittest;含 UI headless smoke)
 ├── .github/workflows/
 │   ├── update-history.yml        # 大樂透 cron(週二/五 4 槽)
 │   ├── update-powerball.yml      # 威力彩 cron(週一/四 4 槽)
@@ -66,8 +73,8 @@ my-lottery-dashboard/
 |---|---|---|---|
 | 入口 | `streamlit_app.py` | 設定頁面、開兩個 tab、把對應 CSV path 傳給各 view | 不載資料、不分析、不選號(純委派) |
 | 表現層 | `src/ui/*_view.py` | widget、session_state(`l649_`/`pb_` 前綴)、cache 包裝、容錯渲染、降級提示 | 不定義演算法常數(應 import) |
-| 訊號層 | `src/generator/*_engine.py` | gap 統計 → 冷暖熱分層 + 動態和值 + `STATIC_FALLBACK_ANALYSIS` | 不發網路、不碰 Streamlit |
-| 選號層 | `src/generator/*_picker.py` | Phase 3 shuffle + Phase 4 五濾網 + Round 2 disjoint;大樂透另含 Howard | 不載 CSV、不發網路 |
+| 訊號層 | `src/generator/base_engine.py` + 兩薄 `*_engine.py` | gap 統計 → 冷暖熱分層 + 動態和值 + `STATIC_FALLBACK_ANALYSIS`;第一區邏輯單一實作於 `base_engine.analyze_main_zone()`,兩引擎委派(v6.23 B4a) | 不發網路、不碰 Streamlit;dataclass 留各引擎(純信號) |
+| 選號層 | `src/generator/base_picker.py` + 兩薄 `*_picker.py` | validator/pool-雙膽/5 濾網/批次 pair-disjoint 單一實作於 `base_picker`,兩 picker 委派(v6.23 B4b);Phase 3 shuffle + Round 2 disjoint;大樂透 Howard 經 `extra` hook、威力彩第二區 `_resolve_bonus` 後置 | 不載 CSV、不發網路 |
 | 包牌 | `src/generator/abbreviated_wheel.py` | 固定 12 號 8 注 4保3 covering(刻意**不過**五濾網) | 不混 Howard/v6.16 濾網 |
 | 載入層 | `src/data/loader*.py` | CSV/JSON → `list[list[int]]`,逐欄 raise(Fail Loud) | 不寫回 repo、不發網路 |
 | 血緣/新鮮 | `src/data/provenance.py`、`freshness.py` | 來源/抓取時間/歸屬日;開獎截止線落後偵測 | additive,不污染引擎 dataclass |

@@ -113,15 +113,16 @@ class TestRulesActuallyCatchViolations(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             (tmp_path / "src" / "generator").mkdir(parents=True)
-            (tmp_path / "src" / "generator" / "history_engine.py").write_text(
+            # v6.23 B4a:partition 斷言收斂至 base_engine(SSOT)→ 以它當缺失目標
+            (tmp_path / "src" / "generator" / "base_engine.py").write_text(
                 "# no invariant assert here\n"
             )
             with patch("scripts.check_constitution.ROOT", tmp_path):
                 violations = check_invariant_asserts_present()
-            # 至少 6 個 sentinels 缺(任意 file 不存在也算違規)— 但 only history_engine 我們 create 了
-            # 其他 5 個檔不存在 → 直接 continue,所以只回 history_engine 的 1 個違規
+            # required 5 個 sentinel 對應 5 檔;只 create 了 base_engine,
+            # 其餘 4 檔不存在 → continue,故只回 base_engine 的 1 個違規
             self.assertEqual(len(violations), 1)
-            self.assertIn("history_engine", violations[0].file)
+            self.assertIn("base_engine", violations[0].file)
 
 
 if __name__ == "__main__":

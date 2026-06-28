@@ -116,6 +116,35 @@ my-lottery-2026/
   - 新測試：`tests/test_review_findings.py` 14 個 cases — 3 個風險各帶 raise 路徑 + 兼容性正例
   - 驗證：144 unit tests 全綠（134 → 144，+10）；既有引擎/scraper/UI 零退化
 
+## 深層拔毒 Phase 3 — domain.py 升真 SSOT + 死碼清除(v6.24,進行中)
+> 依《深層毒素稽核報告》同意藍圖:T1(domain 真 SSOT)→ T4(小修/死碼)→ T2(B5 UI)→ T3(B6)。一次一檔、golden 守、per-file commit。
+- [x] **T1-a `history_engine.py`**:刪自刻 `POOL/DEFAULTS/STATIC_SUM`(1,49 / DEFAULTS dict / 120,180)→ import `domain.LOTTO649`;消費端名稱不變、值由 test_domain 對帳;golden 全 seed MATCH、43 測試綠。解 S1 影子 SSOT(大樂透側)。
+- [x] **T1-b `powerball_engine.py` + `domain.py` docstring**:刪自刻 `MAIN_POOL/BONUS_POOL/DEFAULTS/STATIC_SUM`(1,38 / 1,8 / 90,144)→ import `domain.POWERBALL`;`domain.py` docstring 由「additive 尚未消費」更正為「真 SSOT」。golden MATCH、40 測試綠。S1 影子 SSOT **全消**(engine 層雙側皆 import domain)。
+- [x] **T4-a `data/_dates.py`(新)+ `provenance.py` + `freshness.py`**:① **D1 死碼**:刪 `provenance.read_csv_rows`(0 caller)+ 釋放 `csv/io/Path` 三 import;② **S5 SSOT**:`strptime("%Y/%m/%d")` 重複(provenance/freshness 各一)收斂至 `data/_dates.parse_csv_date`(嚴格解析,與 scraper/_dates.canon_date 寬鬆正規化分工)。54 測試 + 憲法 7/7 綠。
+- [x] **T2-a `ui/_view_base.py`(新)+ `tests/test_view_base.py`(新)**:抽兩 view 純 helper SSOT — `expand_tails_to_numbers`(S4)/`freshness_warning`/`upload_provenance`/`analysis_rng`(DR-7 RNG 契約);無 streamlit 依賴 → 8 單元測試覆蓋。
+- [x] **B6 `metrics.py` + `backtest.py`(feat,改行為=開威力彩分析)+ `test_metrics.py`/`test_backtest.py`**:分析層參數化吃 `DomainConfig`(預設 LOTTO649 → 既有 CLI/測試行為不變)。① **S3 解**:刪寫死 6/49,改 `dom.pool_*/ticket_size/static_sum_*`;`metrics._passes_static_filters` 第 5 份濾網副本委派 `base_picker.passes_base_filters`(SSOT)。② **開威力彩路徑**:`--lottery powerball` → compression(C(38,6)=2.76M)/survival/backtest 第一區命中;**§1 不捏造**:威力彩無 honest 名目獎金表 → backtest payout/ROI 回 None(非 fabricate)。③ 新測試:test_metrics +5(_total_combos/sum_bounds/MC/survival/lotto 不變)、新 test_backtest 4(lotto ROI / powerball None / newest-first guard)。注意:**改行為,宜獨立 PR**(commit 已用 feat 標記便於拆分)。
+- [x] **T2-b/c `lotto649_view.py` + `powerball_view.py`**:兩 view 接上 `_view_base` 4 helper;刪各自 `_expand_tails`(S4)、`_freshness_warning`/`_load_upload`/貼上路徑 inline `HistoryProvenance`(共 3 處)、`cached_analysis` rng → SSOT helper;**連帶清掉** `import random`/`now_utc`/`check_freshness` 三個變無用的 import。修 bug:**DR-5**(大樂透 `except (ValueError,Exception)`→`except Exception`)、**DR-7**(大樂透 render rng 由 `None`→`analysis_rng`,兩 view 契約一致)、**DR-4**(威力彩早期載入 `except Exception`→`(PowerballLoadError,OSError)`,§1 Fail Loud)、**DR-2**(威力彩補膽∩排除衝突前置驗證,對齊大樂透)。streamlit stub import 驗證兩 view 模組頂層無誤;render widget 階梯**未動**(待你本機雙 tab 手測)。
+
+- [x] **#36 `tests/test_ui_smoke.py`(新)— UI 執行覆蓋網**:本專案兩 view 過去**零自動測試**(streamlit 未裝)。新增可執行 streamlit stub,headless 實跑 `render()` 端到端(go 按鈕 False/True 兩路徑、真實 CSV),斷言:無 NameError、無重複 widget key、key 集合穩定。捕捉 import 檢查抓不到的 render 路徑錯誤 + key 衝突 → 對 _view_base/_widgets 重構是有效回歸網(3 測試,全綠)。**工程結論**:render() 剩餘區段(資料來源 help 文案/哨兵字串、注數 slider 上界 50 vs 10、膽碼-排除有狀態 seeding、結果表 Howard/wheel/bonus)分歧瑣碎且散佈 → 再抽只會得到「參數比邏輯多」的薄殼(SSOT 效益低、churn 風險高)或須抹除可見差異;god-function 子函式拆分屬變數穿線 logic-risk,headless 無法保證 → 留待使用者本機 streamlit 手測同步進行(task #36 後續)。
+- [x] **T2-render(部分)`ui/_widgets.py`(新)+ 兩 view**:抽 render() 設定階梯中**無狀態**的 3 區段(Z-Score 雙滑桿 / SMA 區段 / 尾數訊號 3 滑桿)至 `_widgets.py`,以 `key_prefix` 參數化 → **widget key 與重構前逐字相同**(recording stub 實跑驗證 `l649_*`/`pb_*`,session_state 不破);SMA pad 選項/上界依樂透參數化(大樂透 ±60、威力彩 ±50)。消 S2 ~190 行重複,render() 兩檔各縮 ~80 行。**未動**:資料來源(session_state)、膽碼/排除(reset/clear callback)、結果表(Howard/wheel/bonus)及 render() 完整子函式拆分 — 那些有狀態/分歧大,blind import 驗證無法保證 runtime 正確,留待本機 streamlit 手測(§1)。
+
+## SSOT 全域排毒重構 Phase 2 — B4 引擎 + 選號收斂(v6.23)
+- [x] **B4b:新增 `src/generator/base_picker.py`,兩選號器 ~90% copy-paste 收斂為共用骨架** ✅ B4 完成(B4a+B4b)
+  - `base_picker.py` 吸收:3 個 validator + 池邊界參數化 `validate_history`/`validate_num_tickets`、Phase 2 `resolve_pool_and_keys`(pool+雙膽建構)、基礎 5 濾網 `passes_base_filters(cfg, extra)`、批次 pair-disjoint 骨架 `generate_batch_disjoint(sub_rounds, passes)`
+  - **DR-3 修復**:質數/大小/奇偶/連號 5 濾網單一實作於 `passes_base_filters`(原本埋在大樂透 Howard 擴充裡,改一處要改兩處);濾網常數吃 `DomainConfig`
+  - **留差異(plug-in)**:大樂透 Howard 8 條 + 字頭/谷底經 `extra` hook 注入;威力彩第二區 `_resolve_bonus` 後置;generate_tickets P1/P4/Round 編排留各 picker(Howard/bonus 在此分歧)
+  - 兩 picker 公開常數(`BIG_THRESHOLD`/`PRIMES_SET`/`DECADE_BANDS`…)與 `_passes_filters`/`ticket_stats`/`generate_tickets` 簽章全部保留(測試契約不破)
+  - golden-seed 回歸:6 seed ×(兩 picker generate_tickets + Howard 模式)逐票 byte-identical
+  - 驗證:262 tests 全綠、憲法 7/7 PASS;變更檔案:`src/generator/base_picker.py`(新)、`lotto_picker.py`/`powerball_picker.py`(薄化)、`ARCHITECTURE.md`、`STATE.md`
+- [x] **B4a:新增 `src/generator/base_engine.py`,兩引擎第一區五階段邏輯收斂為單一實作**
+  - `base_engine.py` 吸收:`_gaps(lo,hi)`/`_z_layer(lo,hi)`/`_tail_counts`/`_dormant_tails`/`_auto_keys(lo,hi)`/`_dynamic_sum_range`(逐位元組相同或僅池邊界參數化)+ `validate_analyze_params`(byte-identical 驗證級聯)+ `analyze_main_zone()`(第一區 orchestration + 三鐵則斷言)
+  - 兩 `*_engine.py` 薄化:`history_engine` 271 → ~140 行、`powerball_engine` 323 → ~190 行;`analyze()` 縮成「validate → analyze_main_zone → `HistoryAnalysis(**mz)` / `PowerballAnalysis(**mz, bonus…)`」
+  - **dataclass 留各引擎**(CLAUDE.md §2.2/§7 紅線:純信號 + cache-key 語義);威力彩第二區 `_bonus_analyze` + bonus 斷言留 `powerball_engine`(領域差異)
+  - **golden-seed 回歸**:`scratchpad/golden_capture.py` 凍結重構前 6 seed × (兩 engine analyze + 兩 picker generate_tickets + Howard) 全輸出,重構後 `GOLDEN MATCH ✅` 逐票/逐欄位 byte-identical
+  - 連帶修正(Debug):`check_constitution` `invariant-asserts` sentinel 改指 `base_engine.py`(partition)+ `powerball_engine.py`(bonus);其合成測試改建 `base_engine.py`;`CLAUDE.md §4.2/§4.4` assert 位置更新
+  - 驗證:262 tests 全綠、憲法 7/7 PASS、golden 全 seed 相同
+  - 變更檔案:`src/generator/base_engine.py`(新)、`history_engine.py`/`powerball_engine.py`(薄化)、`scripts/check_constitution.py`、`tests/test_check_constitution.py`、`CLAUDE.md`、`ARCHITECTURE.md`
+
 ## SSOT 全域排毒重構 Phase 2 — B0~B3 + 診斷對齊(v6.22)
 - [x] **使用者「鐵腕重構」：消除大樂透/威力彩軸線整層 copy-paste,收斂 SSOT** 🚧 進行中(B0–B3 完成,B4–B6 待續)
   - 先產 `REFACTOR_AUDIT.md`(5 組鏡像對 ~1175-1225 行 copy-paste、8 條漂移 bug、DomainConfig + 分層 base 藍圖)+ 刷新 `ARCHITECTURE.md` 逆向地圖

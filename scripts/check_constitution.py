@@ -174,8 +174,11 @@ def check_invariant_asserts_present() -> list[Violation]:
     """CLAUDE.md §4.2:核心引擎必須有不變量斷言(v6.4 加入)。"""
     out: list[Violation] = []
     required = {
-        "src/generator/history_engine.py": "set(hot) | set(warm) | set(cold)",
-        "src/generator/powerball_engine.py": "set(hot) | set(warm) | set(cold)",
+        # v6.23 B4a:第一區 hot/warm/cold partition 斷言收斂至共用底座
+        # base_engine.analyze_main_zone(兩 engine 的 analyze 委派之)
+        "src/generator/base_engine.py": "set(hot) | set(warm) | set(cold)",
+        # 威力彩第二區(bonus)斷言仍留 powerball_engine — 領域差異
+        "src/generator/powerball_engine.py": "bonus gaps must cover [1,8]",
         "src/generator/lotto_picker.py": "ticket invariant violated",
         "src/generator/powerball_picker.py": "ticket invariant violated",
         # v6.22 B2:append-only assert 收斂至共用底座 run_download(兩 scraper 委派之)

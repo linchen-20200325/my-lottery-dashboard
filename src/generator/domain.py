@@ -15,9 +15,10 @@ CLAUDE.md §2.1 / REFACTOR_AUDIT §5.1。本模組把目前散落在
     可插拔策略(REFACTOR_AUDIT §5.2「抽共用、留差異」),維持在 `lotto_picker`。
   - **stdlib only**:僅 `dataclasses` + `frozenset`,零第三方依賴。
 
-本檔目前為「宣告式 SSOT」(additive):建立後尚未被消費端 import,值由
-`tests/test_domain.py` 對四檔現役常數逐欄對帳鎖定,後續批次(B3/B4)再逐一
-把 engine/picker/loader 切換為 import 自本檔。
+本檔為**真 SSOT**(v6.24 T1 起):engine(history/powerball)、picker、loader 皆
+`import` 自本檔(pool / ticket_size / special / DEFAULTS / static_sum / 濾網常數);
+`tests/test_domain.py` 逐欄對帳鎖定值。其餘消費端(views / metrics / abbreviated_wheel)
+經 engine re-export 取得相同名稱,故全專案單一真源、零重複宣告。
 """
 
 from __future__ import annotations

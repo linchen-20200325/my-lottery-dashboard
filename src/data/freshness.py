@@ -13,6 +13,8 @@ import csv
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
+from src.data._dates import parse_csv_date
+
 # 台灣固定 GMT+8、無 DST
 GMT8 = timezone(timedelta(hours=8))
 
@@ -65,13 +67,10 @@ def latest_csv_date(path: Path | str) -> date | None:
         with p.open("r", encoding="utf-8", newline="") as fp:
             reader = csv.DictReader(fp)
             for row in reader:
-                raw = (row.get("draw_date") or "").strip()
-                if not raw:
-                    continue
-                try:
-                    return datetime.strptime(raw, "%Y/%m/%d").date()
-                except ValueError:
-                    continue  # skip malformed,繼續往後找
+                d = parse_csv_date(row.get("draw_date") or "")
+                if d is not None:
+                    return d  # newest-first → 第一個可解析即最新
+                # 空 / 非法 → 繼續往後找
     except OSError:
         return None
     return None

@@ -14,38 +14,33 @@ Stdlib only — `random` + `collections` + `statistics`.
 from __future__ import annotations
 
 import random
-from collections import Counter
 from dataclasses import dataclass
-from statistics import mean, pstdev
+from statistics import mean
 from typing import Sequence
 
-# 第一區 (主號碼池)
-MAIN_POOL_MIN, MAIN_POOL_MAX = 1, 38
-TICKET_SIZE = 6
-# 第二區 (特別號池)
-BONUS_POOL_MIN, BONUS_POOL_MAX = 1, 8
-TAILS_RANGE = range(10)
+from src.generator.base_engine import (
+    TAILS_RANGE,
+    analyze_main_zone,
+    validate_analyze_params,
+)
+from src.generator.domain import POWERBALL as _DOM
 
-# 預設參數（vs 大樂透：池小 → pad 緊一階、clamp 縮窄）
-DEFAULTS = {
-    "hot_sigma_factor": 0.5,
-    "cold_sigma_factor": 1.5,
-    "min_std": 1.0,
-    "hot_threshold_floor": 2,
-    "sum_sma_window": 10,
-    "sum_range_pad": 25,
-    "sum_clamp_lo": 80,         # 6 from 1-38 安全下限（理論最小 21）
-    "sum_clamp_hi": 154,        # 6 from 1-38 安全上限（理論最大 213）
-    # Tail signals (v6.10: 放寬 default 讓常見情況也能觸發訊號)
-    # 詳見 history_engine.DEFAULTS 同段註解
-    "overheat_recent_periods": 3,
-    "overheat_min_count": 3,
-    "dormant_periods": 8,
-}
+# 領域常數單一真實來源 = domain.POWERBALL(v6.24 T1:消除「影子 SSOT」,引擎不再自刻
+# 1/38、1/8、DEFAULTS dict、90/144)。名稱維持原樣供既有消費端零摩擦 import,
+# 值由 test_domain.py 對帳鎖定。
+# 第一區 (主號碼池)
+MAIN_POOL_MIN, MAIN_POOL_MAX = _DOM.pool_min, _DOM.pool_max
+TICKET_SIZE = _DOM.ticket_size
+# 第二區 (特別號池)
+BONUS_POOL_MIN, BONUS_POOL_MAX = _DOM.special_min, _DOM.special_max
+
+# 預設參數來自 domain.POWERBALL.defaults(vs 大樂透:池小 → pad 緊一階 25、
+# clamp 縮窄 [80,154];sum_clamp_lo 理論最小 21、sum_clamp_hi 理論最大 213;
+# tail 訊號 v6.10 放寬同 history_engine.DEFAULTS 段註解)。
+DEFAULTS = _DOM.defaults
 
 # 靜態 fallback（Phase 2 容錯）
-STATIC_SUM_MIN = 90
-STATIC_SUM_MAX = 144
+STATIC_SUM_MIN, STATIC_SUM_MAX = _DOM.static_sum_min, _DOM.static_sum_max
 
 
 @dataclass(frozen=True)
@@ -98,83 +93,7 @@ STATIC_FALLBACK_ANALYSIS = PowerballAnalysis(
 )
 
 
-# --- Internals ----------------------------------------------------------------
-
-
-def _gaps(draws: Sequence[Sequence[int]], lo: int, hi: int) -> dict[int, int]:
-    """Number → 遺漏期數（newest-first；gap 0 = 最新期出現）。"""
-    last_seen: dict[int, int] = {}
-    for i, draw in enumerate(draws):
-        for n in draw:
-            last_seen.setdefault(n, i)
-    return {n: last_seen.get(n, len(draws)) for n in range(lo, hi + 1)}
-
-
-def _z_layer(
-    gaps: dict[int, int],
-    hot_threshold: float,
-    cold_threshold: float,
-    lo: int,
-    hi: int,
-) -> tuple[list[int], list[int], list[int]]:
-    hot, warm, cold = [], [], []
-    for n in range(lo, hi + 1):
-        g = gaps[n]
-        if g <= hot_threshold:
-            hot.append(n)
-        elif g >= cold_threshold:
-            cold.append(n)
-        else:
-            warm.append(n)
-    return hot, warm, cold
-
-
-def _tail_counts(draws: Sequence[Sequence[int]], k: int) -> dict[int, int]:
-    counter: Counter[int] = Counter()
-    for draw in draws[:k]:
-        for n in draw:
-            counter[n % 10] += 1
-    return {t: counter.get(t, 0) for t in TAILS_RANGE}
-
-
-def _dormant_tails(draws: Sequence[Sequence[int]], k: int) -> list[int]:
-    seen: set[int] = set()
-    for draw in draws[:k]:
-        for n in draw:
-            seen.add(n % 10)
-    return sorted(t for t in TAILS_RANGE if t not in seen)
-
-
-def _auto_keys(
-    hot: list[int], cold: list[int], rng: random.Random
-) -> list[int]:
-    keys: list[int] = []
-    if hot:
-        keys.append(rng.choice(hot))
-    if cold:
-        candidates = [n for n in cold if n not in keys]
-        if candidates:
-            keys.append(rng.choice(candidates))
-    if not keys:
-        keys = [rng.randint(MAIN_POOL_MIN, MAIN_POOL_MAX)]
-    return sorted(keys)
-
-
-def _dynamic_sum_range(
-    draws: Sequence[Sequence[int]],
-    window: int,
-    pad: int,
-    clamp_lo: int,
-    clamp_hi: int,
-) -> tuple[float, int, int]:
-    sums = [sum(d) for d in draws[:window]]
-    sma = mean(sums) if sums else float((clamp_lo + clamp_hi) // 2)
-    lo = max(clamp_lo, int(round(sma - pad)))
-    hi = min(clamp_hi, int(round(sma + pad)))
-    # Invariant: SMA 落 [clamp_lo, clamp_hi] 外時 lo/hi 會反轉 → collapse 至最近 clamp 端點
-    if lo > hi:
-        lo = hi = clamp_hi if sma > clamp_hi else clamp_lo
-    return sma, lo, hi
+# --- Internals(威力彩第二區專屬;第一區五階段共用邏輯見 base_engine)-----------
 
 
 def _bonus_analyze(
@@ -236,85 +155,48 @@ def analyze(
     Raises ValueError on empty draws or invalid thresholds. Caller should
     catch and substitute STATIC_FALLBACK_ANALYSIS for graceful degradation.
     """
-    if not draws:
-        raise ValueError("history_draws must not be empty")
-    if len(draws) < 2:
-        raise ValueError(
-            f"history_draws must have >= 2 rows for meaningful Z-score "
-            f"(got {len(draws)}; single-row history degenerates to "
-            f"all-hot/all-cold with zero variance — UI must fall back to "
-            f"STATIC_FALLBACK_ANALYSIS)"
-        )
-    if hot_sigma_factor < 0 or cold_sigma_factor < 0:
-        raise ValueError("sigma factors must be >= 0")
-    if sum_clamp_lo >= sum_clamp_hi:
-        raise ValueError("sum_clamp_lo must be < sum_clamp_hi")
-    if sum_range_pad < 0:
-        raise ValueError("sum_range_pad must be >= 0")
-    if overheat_recent_periods < 1 or dormant_periods < 1:
-        raise ValueError("recent-period thresholds must be >= 1")
-    if overheat_min_count < 1:
-        raise ValueError("overheat_min_count must be >= 1")
-
+    validate_analyze_params(
+        draws,
+        hot_sigma_factor=hot_sigma_factor,
+        cold_sigma_factor=cold_sigma_factor,
+        sum_clamp_lo=sum_clamp_lo,
+        sum_clamp_hi=sum_clamp_hi,
+        sum_range_pad=sum_range_pad,
+        overheat_recent_periods=overheat_recent_periods,
+        dormant_periods=dormant_periods,
+        overheat_min_count=overheat_min_count,
+    )
     rng = rng if rng is not None else random.Random()
 
-    # --- 第一區 ---
-    gaps = _gaps(draws, MAIN_POOL_MIN, MAIN_POOL_MAX)
-    gap_values = list(gaps.values())
-    g_mean = mean(gap_values)
-    g_std = max(min_std, pstdev(gap_values))
-    hot_threshold = max(float(hot_threshold_floor), g_mean - hot_sigma_factor * g_std)
-    cold_threshold = g_mean + cold_sigma_factor * g_std
-
-    hot, warm, cold = _z_layer(
-        gaps, hot_threshold, cold_threshold, MAIN_POOL_MIN, MAIN_POOL_MAX,
+    # --- 第一區（五階段委派 base_engine.analyze_main_zone;SSOT v6.23）---
+    mz = analyze_main_zone(
+        draws, MAIN_POOL_MIN, MAIN_POOL_MAX,
+        hot_sigma_factor=hot_sigma_factor,
+        cold_sigma_factor=cold_sigma_factor,
+        min_std=min_std,
+        hot_threshold_floor=hot_threshold_floor,
+        sum_sma_window=sum_sma_window,
+        sum_range_pad=sum_range_pad,
+        sum_clamp_lo=sum_clamp_lo,
+        sum_clamp_hi=sum_clamp_hi,
+        overheat_recent_periods=overheat_recent_periods,
+        overheat_min_count=overheat_min_count,
+        dormant_periods=dormant_periods,
+        rng=rng,
     )
 
-    sum_sma, sum_lo, sum_hi = _dynamic_sum_range(
-        draws, sum_sma_window, sum_range_pad, sum_clamp_lo, sum_clamp_hi,
-    )
-
-    tail_counts = _tail_counts(draws, overheat_recent_periods)
-    overheated = sorted(
-        t for t, c in tail_counts.items() if c >= overheat_min_count
-    )
-    dormant = _dormant_tails(draws, dormant_periods)
-    exclude_tails = sorted(set(overheated) | set(dormant))
-
-    auto_keys = _auto_keys(hot, cold, rng)
-
-    # --- 第二區 ---
+    # --- 第二區（威力彩專屬）---
     specials_seq: Sequence[int] = specials if specials is not None else []
     bonus_gaps, bonus_hot, bonus_cold, bonus_pick = _bonus_analyze(specials_seq, rng)
 
-    # §4.2 不變量斷言（憲法 §6 自審清單第 10 條）
-    _main_pool = set(range(MAIN_POOL_MIN, MAIN_POOL_MAX + 1))
+    # §4.2 不變量斷言 — 第二區專屬（第一區三鐵則已在 analyze_main_zone 內斷言）
     _bonus_pool = set(range(BONUS_POOL_MIN, BONUS_POOL_MAX + 1))
-    assert set(gaps.keys()) == _main_pool, "main gaps must cover [1,38]"
-    assert set(hot) | set(warm) | set(cold) == _main_pool, \
-        "main hot/warm/cold partition must cover [1,38]"
     assert set(bonus_gaps.keys()) == _bonus_pool, "bonus gaps must cover [1,8]"
-    assert sum_lo <= sum_hi, f"sum range inverted: lo={sum_lo} > hi={sum_hi}"
     assert BONUS_POOL_MIN <= bonus_pick <= BONUS_POOL_MAX, \
         f"bonus_pick {bonus_pick} out of [1,8]"
 
     return PowerballAnalysis(
-        hot=hot,
-        warm=warm,
-        cold=cold,
-        gaps=gaps,
-        gap_mean=g_mean,
-        gap_std=g_std,
-        hot_threshold=hot_threshold,
-        cold_threshold=cold_threshold,
-        sum_sma=sum_sma,
-        sum_min_dynamic=sum_lo,
-        sum_max_dynamic=sum_hi,
-        tail_counts_recent=tail_counts,
-        overheated_tails=overheated,
-        dormant_tails=dormant,
-        exclude_tails=exclude_tails,
-        auto_keys=auto_keys,
+        **mz,
         bonus_gaps=bonus_gaps,
         bonus_hot=bonus_hot,
         bonus_cold=bonus_cold,

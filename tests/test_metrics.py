@@ -7,11 +7,14 @@ from pathlib import Path
 
 from src.analytics.metrics import (
     TOTAL_COMBINATIONS,
-    compression_rate,
+    _sum_bounds,
+    _total_combos,
     compression_rate_monte_carlo,
+    compression_rate,
     reconcile_compression,
     survival_rate,
 )
+from src.generator.domain import LOTTO649, POWERBALL
 
 
 class TestCompressionRate(unittest.TestCase):
@@ -146,6 +149,56 @@ class TestNamingConvention(unittest.TestCase):
             self.assertLessEqual(r["survival_ratio"], 1.0)
         finally:
             p.unlink()
+
+
+class TestPowerballMetrics(unittest.TestCase):
+    """B6(v6.24)— 分析層參數化吃 DomainConfig,威力彩第一區 6/38 路徑。"""
+
+    def test_total_combos_per_dom(self):
+        self.assertEqual(_total_combos(LOTTO649), 13_983_816)   # C(49,6)
+        self.assertEqual(_total_combos(POWERBALL), 2_760_681)   # C(38,6)
+
+    def test_sum_bounds_resolve_from_dom(self):
+        # None → 該樂透靜態 fallback 區間(SSOT:domain.static_sum_*)
+        self.assertEqual(_sum_bounds(LOTTO649, None, None), (120, 180))
+        self.assertEqual(_sum_bounds(POWERBALL, None, None), (90, 144))
+        # 顯式傳入則覆寫
+        self.assertEqual(_sum_bounds(POWERBALL, 100, 130), (100, 130))
+
+    def test_powerball_monte_carlo_in_range(self):
+        mc = compression_rate_monte_carlo(n_samples=20_000, seed=7, dom=POWERBALL)
+        self.assertGreater(mc["estimated_ratio"], 0.0)
+        self.assertLess(mc["estimated_ratio"], 1.0)
+
+    def test_powerball_survival(self):
+        # 威力彩 CSV 同樣 n1..n6(第一區 1-38);survival_rate 讀 ticket_size 顆
+        rows = [
+            {"n1": 5, "n2": 12, "n3": 18, "n4": 25, "n5": 33, "n6": 8},
+            {"n1": 1, "n2": 2, "n3": 3, "n4": 4, "n5": 5, "n6": 6},  # likely killed
+        ]
+        with tempfile.NamedTemporaryFile(
+            "w", suffix=".csv", delete=False, newline=""
+        ) as f:
+            w = csv.DictWriter(f, fieldnames=["n1", "n2", "n3", "n4", "n5", "n6"])
+            w.writeheader()
+            w.writerows(rows)
+            p = Path(f.name)
+        try:
+            r = survival_rate(p, dom=POWERBALL)
+            self.assertEqual(r["draws_total"], 2)
+            self.assertEqual(r["survived"] + r["killed"], 2)
+            self.assertGreaterEqual(r["survival_ratio"], 0.0)
+            self.assertLessEqual(r["survival_ratio"], 1.0)
+        finally:
+            p.unlink()
+
+    def test_lotto_default_unchanged(self):
+        # dom 預設 LOTTO649 → 既有無參數呼叫行為不變(向後相容)
+        mc_default = compression_rate_monte_carlo(n_samples=10_000, seed=2026)
+        mc_explicit = compression_rate_monte_carlo(
+            n_samples=10_000, seed=2026, dom=LOTTO649,
+        )
+        self.assertEqual(mc_default, mc_explicit)
 
 
 if __name__ == "__main__":

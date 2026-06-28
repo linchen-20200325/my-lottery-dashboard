@@ -13,12 +13,11 @@ Stdlib only(`datetime` + `dataclasses`)。
 
 from __future__ import annotations
 
-import csv
-import io
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
-from pathlib import Path
 from typing import Iterable
+
+from src.data._dates import parse_csv_date
 
 
 @dataclass(frozen=True)
@@ -53,13 +52,9 @@ def extract_dates(
     """
     dates: list[date] = []
     for row in rows:
-        raw = (row.get("draw_date") or "").strip()
-        if not raw:
-            continue
-        try:
-            dates.append(datetime.strptime(raw, "%Y/%m/%d").date())
-        except ValueError:
-            continue
+        d = parse_csv_date(row.get("draw_date") or "")
+        if d is not None:
+            dates.append(d)
     if not dates:
         return None, None
     return max(dates), min(dates)
@@ -79,20 +74,6 @@ def build_provenance_from_rows(
         as_of=as_of,
         earliest=earliest,
     )
-
-
-def read_csv_rows(text_or_path: str | Path) -> list[dict]:
-    """Helper to fetch raw CSV rows for provenance extraction.
-
-    Accepts a Path(file) or str(raw CSV text)。對 path 不存在 / I/O 失敗
-    回空 list — 真正驗證走 loader.from_csv_rows 的 strict 路徑。
-    """
-    if isinstance(text_or_path, Path):
-        if not text_or_path.exists():
-            return []
-        with text_or_path.open("r", encoding="utf-8", newline="") as fp:
-            return list(csv.DictReader(fp))
-    return list(csv.DictReader(io.StringIO(text_or_path)))
 
 
 def format_provenance_caption(prov: HistoryProvenance) -> str:
