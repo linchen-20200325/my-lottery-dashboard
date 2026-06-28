@@ -27,8 +27,9 @@ my-lottery-dashboard/
 │   │   ├── lotto649_view.py      #   大樂透分頁(含 Howard 模式 + 精簡包牌,939 行)
 │   │   └── powerball_view.py     #   威力彩分頁(含第二區 bonus,728 行)
 │   ├── generator/                # ── 訊號 + 選號核心(stdlib-only)
-│   │   ├── history_engine.py     #   大樂透訊號:gap → Z-Score 冷熱 + SMA 動態和值
-│   │   ├── powerball_engine.py   #   威力彩訊號:主池 + 第二區雙池分析
+│   │   ├── base_engine.py        #   ★SSOT 第一區五階段(gap/Z-Score/SMA/tail/auto_keys)+ 驗證
+│   │   ├── history_engine.py     #   大樂透訊號薄殼:委派 base_engine + 組 HistoryAnalysis
+│   │   ├── powerball_engine.py   #   威力彩訊號薄殼:委派 base_engine + 第二區 _bonus_analyze
 │   │   ├── lotto_picker.py       #   大樂透選號:五階段管線 + 五濾網 + Howard 8 條
 │   │   ├── powerball_picker.py   #   威力彩選號:五階段管線 + 五濾網 + 第二區
 │   │   └── abbreviated_wheel.py  #   精簡包牌:L(12,6,4,3) 4保3 greedy set-cover
@@ -66,7 +67,7 @@ my-lottery-dashboard/
 |---|---|---|---|
 | 入口 | `streamlit_app.py` | 設定頁面、開兩個 tab、把對應 CSV path 傳給各 view | 不載資料、不分析、不選號(純委派) |
 | 表現層 | `src/ui/*_view.py` | widget、session_state(`l649_`/`pb_` 前綴)、cache 包裝、容錯渲染、降級提示 | 不定義演算法常數(應 import) |
-| 訊號層 | `src/generator/*_engine.py` | gap 統計 → 冷暖熱分層 + 動態和值 + `STATIC_FALLBACK_ANALYSIS` | 不發網路、不碰 Streamlit |
+| 訊號層 | `src/generator/base_engine.py` + 兩薄 `*_engine.py` | gap 統計 → 冷暖熱分層 + 動態和值 + `STATIC_FALLBACK_ANALYSIS`;第一區邏輯單一實作於 `base_engine.analyze_main_zone()`,兩引擎委派(v6.23 B4a) | 不發網路、不碰 Streamlit;dataclass 留各引擎(純信號) |
 | 選號層 | `src/generator/*_picker.py` | Phase 3 shuffle + Phase 4 五濾網 + Round 2 disjoint;大樂透另含 Howard | 不載 CSV、不發網路 |
 | 包牌 | `src/generator/abbreviated_wheel.py` | 固定 12 號 8 注 4保3 covering(刻意**不過**五濾網) | 不混 Howard/v6.16 濾網 |
 | 載入層 | `src/data/loader*.py` | CSV/JSON → `list[list[int]]`,逐欄 raise(Fail Loud) | 不寫回 repo、不發網路 |

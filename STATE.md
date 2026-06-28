@@ -116,6 +116,16 @@ my-lottery-2026/
   - 新測試：`tests/test_review_findings.py` 14 個 cases — 3 個風險各帶 raise 路徑 + 兼容性正例
   - 驗證：144 unit tests 全綠（134 → 144，+10）；既有引擎/scraper/UI 零退化
 
+## SSOT 全域排毒重構 Phase 2 — B4a 引擎收斂(v6.23)
+- [x] **B4a:新增 `src/generator/base_engine.py`,兩引擎第一區五階段邏輯收斂為單一實作** 🚧 B4 進行中(B4a 完成,B4b 待續)
+  - `base_engine.py` 吸收:`_gaps(lo,hi)`/`_z_layer(lo,hi)`/`_tail_counts`/`_dormant_tails`/`_auto_keys(lo,hi)`/`_dynamic_sum_range`(逐位元組相同或僅池邊界參數化)+ `validate_analyze_params`(byte-identical 驗證級聯)+ `analyze_main_zone()`(第一區 orchestration + 三鐵則斷言)
+  - 兩 `*_engine.py` 薄化:`history_engine` 271 → ~140 行、`powerball_engine` 323 → ~190 行;`analyze()` 縮成「validate → analyze_main_zone → `HistoryAnalysis(**mz)` / `PowerballAnalysis(**mz, bonus…)`」
+  - **dataclass 留各引擎**(CLAUDE.md §2.2/§7 紅線:純信號 + cache-key 語義);威力彩第二區 `_bonus_analyze` + bonus 斷言留 `powerball_engine`(領域差異)
+  - **golden-seed 回歸**:`scratchpad/golden_capture.py` 凍結重構前 6 seed × (兩 engine analyze + 兩 picker generate_tickets + Howard) 全輸出,重構後 `GOLDEN MATCH ✅` 逐票/逐欄位 byte-identical
+  - 連帶修正(Debug):`check_constitution` `invariant-asserts` sentinel 改指 `base_engine.py`(partition)+ `powerball_engine.py`(bonus);其合成測試改建 `base_engine.py`;`CLAUDE.md §4.2/§4.4` assert 位置更新
+  - 驗證:262 tests 全綠、憲法 7/7 PASS、golden 全 seed 相同
+  - 變更檔案:`src/generator/base_engine.py`(新)、`history_engine.py`/`powerball_engine.py`(薄化)、`scripts/check_constitution.py`、`tests/test_check_constitution.py`、`CLAUDE.md`、`ARCHITECTURE.md`
+
 ## SSOT 全域排毒重構 Phase 2 — B0~B3 + 診斷對齊(v6.22)
 - [x] **使用者「鐵腕重構」：消除大樂透/威力彩軸線整層 copy-paste,收斂 SSOT** 🚧 進行中(B0–B3 完成,B4–B6 待續)
   - 先產 `REFACTOR_AUDIT.md`(5 組鏡像對 ~1175-1225 行 copy-paste、8 條漂移 bug、DomainConfig + 分層 base 藍圖)+ 刷新 `ARCHITECTURE.md` 逆向地圖

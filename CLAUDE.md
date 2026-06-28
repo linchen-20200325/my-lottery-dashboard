@@ -247,9 +247,9 @@ assert dates[0] >= dates[-1], "CSV must be newest-first"
 | 不變量 | 在哪 assert | 現狀 |
 |---|---|---|
 | `all(1 ≤ n ≤ POOL_MAX and len(set(t))==6 for t in tickets)` | `lotto_picker / powerball_picker` 兩個 return 點 | ✅ v6.4 |
-| `set(gaps.keys()) == set(range(POOL_MIN, POOL_MAX+1))` | `analyze()` 返回前 | ✅ v6.4 |
-| `set(hot) ∪ set(warm) ∪ set(cold) == 全 pool` | `analyze()` 返回前 | ✅ v6.4 |
-| `sum_min_dynamic ≤ sum_max_dynamic` | `analyze()` 返回前(配合 `_dynamic_sum_range` lo>hi collapse 修復) | ✅ v6.4 |
+| `set(gaps.keys()) == set(range(lo, hi+1))` | `base_engine.analyze_main_zone()`(v6.23 B4a 收斂;兩 `analyze()` 委派) | ✅ v6.4 |
+| `set(hot) ∪ set(warm) ∪ set(cold) == 全 pool` | `base_engine.analyze_main_zone()`(同上) | ✅ v6.4 |
+| `sum_min_dynamic ≤ sum_max_dynamic` | `base_engine.analyze_main_zone()`(配合 `_dynamic_sum_range` lo>hi collapse 修復) | ✅ v6.4 |
 | `len(merged) >= len(existing)` (append-only 保證) | `_downloader_base.run_download()` 返回前(v6.22 起兩 scraper 委派) | ✅ v6.4 |
 | CSV newest-first 順序 | `backtest._read_csv` | ✅ v6.3.1 |
 | `history_specials` 全 ∈ [1, 8] | `_bonus_analyze` | ✅ v6.3.1 |
@@ -273,7 +273,7 @@ assert dates[0] >= dates[-1], "CSV must be newest-first"
 
 **不適用(本專案多為整數域,無 underflow / overflow / catastrophic cancellation 風險)**。
 
-僅有的浮點:`pstdev(gap_values)` 在 `history_engine.py:203` / `powerball_engine.py:240`,由 `min_std = 1.0` floor 防 /0。
+僅有的浮點:`pstdev(gap_values)` 在 `base_engine.analyze_main_zone()`(v6.23 B4a 收斂;兩引擎委派),由 `min_std = 1.0` floor 防 /0。
 
 ### 4.5 時序對齊
 
