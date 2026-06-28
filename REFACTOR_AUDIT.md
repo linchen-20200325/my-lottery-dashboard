@@ -164,7 +164,7 @@ max_consecutive_pairs, min/max_key_nums
 | **B0** ✅ | 歸檔一次性腳本 + `metrics.py:49` 改 import `POOL_*` | 極低 | unittest 全綠 |
 | **B1** ✅ | `DomainConfig` + `_canon_date` 收斂(純抽常數,行為不變) | 低 | 既有測試不改即綠 + 憲法 checker |
 | **B2** ✅ | `_downloader_base.py`(差異最少、85-90% 同) | 中 | scraper 測試 + 本機 dry-run |
-| **B3** | `_loader_base.py`(順帶修 DR-1 特別號驗證) | 中 | loader 測試 + 新增大樂透特別號越界測試 |
+| **B3** ✅ | `_loader_base.py`(順帶修 DR-1 特別號驗證)+ 診斷常數接 DomainConfig(SSOT) | 中 | loader 測試 + 新增大樂透特別號越界測試 |
 | **B4** | `base_engine.py` + `base_picker.py`(留 Howard/bonus plug-in) | 高 | golden seed 回歸:重構前後同 seed 必得同票 |
 | **B5** | `_view_base.py`(UI,順帶修 DR-2~DR-7) | 高 | 本機 `streamlit run` 雙 tab 手測 |
 | **B6**(可選) | 分析層參數化吃威力彩 | 高(改行為) | 獨立 PR |

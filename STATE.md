@@ -116,6 +116,19 @@ my-lottery-2026/
   - 新測試：`tests/test_review_findings.py` 14 個 cases — 3 個風險各帶 raise 路徑 + 兼容性正例
   - 驗證：144 unit tests 全綠（134 → 144，+10）；既有引擎/scraper/UI 零退化
 
+## SSOT 全域排毒重構 Phase 2 — B0~B3 + 診斷對齊(v6.22)
+- [x] **使用者「鐵腕重構」：消除大樂透/威力彩軸線整層 copy-paste,收斂 SSOT** 🚧 進行中(B0–B3 完成,B4–B6 待續)
+  - 先產 `REFACTOR_AUDIT.md`(5 組鏡像對 ~1175-1225 行 copy-paste、8 條漂移 bug、DomainConfig + 分層 base 藍圖)+ 刷新 `ARCHITECTURE.md` 逆向地圖
+  - **B0**:歸檔兩支 v3.7 一次性腳本至 `scripts/archive/`;`metrics.py:49` 改 import `POOL_*` 自 `history_engine`(消 SSOT 重刻)
+  - **B1**:新增 `src/generator/domain.py` `DomainConfig`(frozen+hashable),`LOTTO649`/`POWERBALL` 兩實例收斂四檔分歧常數;`tests/test_domain.py` 13 對帳測試鎖定;`canon_date` 收斂至 `src/scraper/_dates.py`(兩 scraper 委派)
+  - **B2**:新增 `src/scraper/_downloader_base.py`,兩 scraper 85-90% copy-paste → 薄 wrapper(356/317 → ~145/150 行);保全 `patch.object` 測試契約(領域函式呼叫時查 module global 注入)
+  - **B3**:新增 `src/data/_loader_base.py`(`LoaderConfig` 參數化),兩 loader 薄化;**bounds 從 DomainConfig 取 → SSOT**;修 **DR-1**(大樂透特別號改「有就驗 [1,49]、無則略過」,補原本完全不驗的漏洞)、**DR-6**(`_preview_json` 統一讀 special→bonus)
+  - **診斷對齊 SSOT**(使用者要求「資料要與診斷資料 tab 對齊」):兩 picker 基礎濾網常數(`BIG_THRESHOLD`/`PRIMES_SET`/…)改源自 `DomainConfig`,使 `ticket_stats`(每注診斷)與 `_passes_filters`(濾網)共用同一來源,杜絕門檻漂移
+  - 連帶修正(Debug):`check_constitution` 的 `canon-date-validates`/`invariant-asserts` sentinel 指向新 SSOT 位置;`CLAUDE.md §3.1/§4.2` 驗證點引用更新
+  - 每批守則:純結構重組、行為不變(同值/同 seed);262 tests 全綠、憲法 7/7 PASS、每單元獨立 commit
+  - **尚未 merge**:依使用者指示 B0–B3 完成後一起合進 main(一個 PR);分支 `claude/beautiful-hawking-wETOk`
+  - 變更檔案:`src/generator/domain.py`、`src/scraper/_dates.py`、`src/scraper/_downloader_base.py`、`src/data/_loader_base.py`(新);兩 scraper / 兩 loader / 兩 picker / `metrics.py`(薄化或改 import);`tests/test_domain.py`、`tests/test_loader.py`、`check_constitution.py` + 其測試;`ARCHITECTURE.md`、`REFACTOR_AUDIT.md`、`CLAUDE.md`
+
 ## UI:整數 slider → pills(v6.21)
 - [x] **使用者請求「所有條狀的 都改成數字按鈕」** ✅ 2026-06-26
   - 範圍:大樂透 + 威力彩 各 6 個整數 slider(共 12 處)→ `st.pills` 快選
