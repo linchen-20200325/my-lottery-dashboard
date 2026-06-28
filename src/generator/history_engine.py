@@ -22,34 +22,25 @@ from src.generator.base_engine import (
     analyze_main_zone,
     validate_analyze_params,
 )
+from src.generator.domain import LOTTO649 as _DOM
 
-POOL_MIN, POOL_MAX = 1, 49
-TICKET_SIZE = 6
+# 領域常數單一真實來源 = domain.LOTTO649(v6.24 T1:消除「影子 SSOT」,引擎不再自刻
+# 1/49、DEFAULTS dict、120/180)。名稱維持原樣,供既有消費端(pickers / views /
+# metrics / abbreviated_wheel)零摩擦 import,值由 test_domain.py 對帳鎖定。
+POOL_MIN, POOL_MAX = _DOM.pool_min, _DOM.pool_max
+TICKET_SIZE = _DOM.ticket_size
 
-# Default tunables — overridable via UI sliders / function args
-DEFAULTS = {
-    # Z-Score gap layering
-    "hot_sigma_factor": 0.5,        # hot threshold = max(2, μ - 0.5σ)
-    "cold_sigma_factor": 1.5,       # cold threshold = μ + 1.5σ
-    "min_std": 1.0,                 # std floor to prevent /0
-    "hot_threshold_floor": 2,       # hot threshold never above this floor
-    # Dynamic sum range
-    "sum_sma_window": 10,           # last N draws for SMA
-    "sum_range_pad": 30,            # ±pad around SMA
-    "sum_clamp_lo": 90,             # absolute safety floor
-    "sum_clamp_hi": 210,            # absolute safety ceiling
-    # Tail signals (v6.10: 放寬 default 讓常見情況也能觸發訊號)
-    # - overheat_min_count: 4 → 3(3 期 18 slot 中,單尾數 ≥ 3 = ~17% 集中、適度異常)
-    # - dormant_periods:    10 → 8(降低 slot 數讓死寂尾數有機率出現)
-    #   舊值 P(任一尾數連 10 期空) ≈ 0.18% → 期望 ≈ 0;新值 8 期 48 slot 提高靈敏度
-    "overheat_recent_periods": 3,
-    "overheat_min_count": 3,
-    "dormant_periods": 8,
-}
+# Default tunables — overridable via UI sliders / function args。
+# 值來自 domain.LOTTO649.defaults(11 鍵;property 每次回傳新 dict,不共享狀態)。
+# 各預設衍生理由(§3.2/§3.3 反捏造,保留 provenance 參照):
+#   - hot_sigma=0.5 / cold_sigma=1.5:hot=max(2, μ-0.5σ)、cold=μ+1.5σ;min_std=1.0 防 /0
+#   - sum_clamp [90,210]:物理上下界(理論 [21,279];SMA pad ±30 後安全帶)
+#   - overheat_min_count=3 / dormant_periods=8(v6.10 放寬):3 期 18 slot 單尾數 ≥3 ≈17% 集中;
+#     舊 dormant=10 期 P≈0.18%→期望≈0,改 8 期 48 slot 提靈敏度
+DEFAULTS = _DOM.defaults
 
 # Static fallback constants (Phase 2 graceful degradation)
-STATIC_SUM_MIN = 120
-STATIC_SUM_MAX = 180
+STATIC_SUM_MIN, STATIC_SUM_MAX = _DOM.static_sum_min, _DOM.static_sum_max
 
 
 @dataclass(frozen=True)
