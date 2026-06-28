@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
-import random
 from pathlib import Path
 
 import streamlit as st
 
+from src.ui._view_base import (
+    analysis_rng,
+    expand_tails_to_numbers as _expand_tails_to_numbers,
+    freshness_warning,
+    upload_provenance,
+)
 from src.analytics.cost_calc import UNIT_PRICE_TWD, summary as cost_summary
-from src.data.freshness import LOTTO649_DRAW_WEEKDAYS, check_freshness
+from src.data.freshness import LOTTO649_DRAW_WEEKDAYS
 from src.data.loader import (
     HistoryLoadError,
     load_csv_file_with_provenance,
@@ -19,7 +24,6 @@ from src.data.loader import (
 from src.data.provenance import (
     HistoryProvenance,
     format_provenance_caption,
-    now_utc,
 )
 from src.generator.history_engine import (
     DEFAULTS,
@@ -67,21 +71,6 @@ from src.generator.lotto_picker import (
 # --- Cached helpers (path-as-string for cache key stability) ------------------
 
 
-def _expand_tails_to_numbers(
-    tails: list[int] | tuple[int, ...] | set[int],
-    lo: int,
-    hi: int,
-) -> list[int]:
-    """v6.17:把排除尾數 list 展開為對應的具體號碼 list。
-
-    例:tails=[1,6] + lo=1 + hi=49 → [1, 6, 11, 16, 21, 26, 31, 36, 41, 46]
-    """
-    if not tails:
-        return []
-    tail_set = set(tails)
-    return [n for n in range(lo, hi + 1) if (n % 10) in tail_set]
-
-
 @st.cache_data(ttl=3600, show_spinner=False)
 def _load_bundled(path_str: str) -> tuple[list[list[int]], HistoryProvenance]:
     return load_csv_file_with_provenance(Path(path_str))
@@ -90,7 +79,7 @@ def _load_bundled(path_str: str) -> tuple[list[list[int]], HistoryProvenance]:
 @st.cache_data(ttl=600, show_spinner=False)
 def _freshness_warning(path_str: str) -> str | None:
     """憲法 §2.4:返回 stale 警告字串或 None;cache 10 分鐘避免每 rerun 重讀。"""
-    return check_freshness(Path(path_str), LOTTO649_DRAW_WEEKDAYS)
+    return freshness_warning(path_str, LOTTO649_DRAW_WEEKDAYS)
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -100,11 +89,7 @@ def _load_upload(payload: bytes, name: str) -> tuple[list[list[int]], HistoryPro
     if name.lower().endswith(".json"):
         # JSON 路徑不帶 draw_date,provenance.as_of 為 None
         draws = load_json_string(text)
-        prov = HistoryProvenance(
-            source=source, fetched_at=now_utc(), n_rows=len(draws),
-            as_of=None, earliest=None,
-        )
-        return draws, prov
+        return draws, upload_provenance(source, len(draws))
     return load_csv_string_with_provenance(text, source=source)
 
 
@@ -135,7 +120,7 @@ def cached_analysis(
     dormant_periods: int,
     seed: int,
 ) -> HistoryAnalysis:
-    rng = random.Random(seed) if seed else random.Random()
+    rng = analysis_rng(seed)
     return analyze(
         draws=history,
         hot_sigma_factor=hot_sigma,
@@ -633,10 +618,7 @@ def render(sample_csv_path: Path) -> None:
                 stripped = pasted.lstrip()
                 if stripped.startswith(("[", "{")):
                     history = load_json_string(pasted)
-                    provenance = HistoryProvenance(
-                        source="<paste:json>", fetched_at=now_utc(),
-                        n_rows=len(history), as_of=None, earliest=None,
-                    )
+                    provenance = upload_provenance("<paste:json>", len(history))
                 else:
                     history, provenance = load_csv_string_with_provenance(
                         pasted, source="<paste:csv>",
@@ -706,7 +688,7 @@ def render(sample_csv_path: Path) -> None:
                 overheat_recent, overheat_min, dormant_periods,
                 seed,
             )
-        except (ValueError, Exception) as exc:  # noqa: BLE001 — defensive
+        except Exception as exc:  # noqa: BLE001 — defensive 降級至靜態 fallback
             fallback_reason = f"動態分析失敗：{exc}"
             analysis = STATIC_FALLBACK_ANALYSIS
     else:
@@ -746,7 +728,7 @@ def render(sample_csv_path: Path) -> None:
     if howard_active:
         st.info("🎯 **Howard 嚴格模式啟用**:Round 1 套用黃金 8 條;Round 2 fallback 退回 v6.16。")
 
-    rng = random.Random(seed) if seed else None
+    rng = analysis_rng(seed)
     try:
         tickets, _ = generate_tickets(
             history_draws=history if history else [[1, 2, 3, 4, 5, 6]],

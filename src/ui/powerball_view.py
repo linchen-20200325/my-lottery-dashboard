@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
-import random
 from pathlib import Path
 
 import streamlit as st
 
-from src.data.freshness import POWERBALL_DRAW_WEEKDAYS, check_freshness
+from src.ui._view_base import (
+    analysis_rng,
+    expand_tails_to_numbers as _expand_tails_to_numbers,
+    freshness_warning,
+    upload_provenance,
+)
+from src.data.freshness import POWERBALL_DRAW_WEEKDAYS
 from src.data.loader_powerball import (
     PowerballLoadError,
     load_csv_file_with_provenance,
@@ -18,7 +23,6 @@ from src.data.loader_powerball import (
 from src.data.provenance import (
     HistoryProvenance,
     format_provenance_caption,
-    now_utc,
 )
 from src.generator.powerball_engine import (
     BONUS_POOL_MAX,
@@ -47,18 +51,6 @@ from src.generator.powerball_picker import (
 # --- Cached helpers ----------------------------------------------------------
 
 
-def _expand_tails_to_numbers(
-    tails: list[int] | tuple[int, ...] | set[int],
-    lo: int,
-    hi: int,
-) -> list[int]:
-    """v6.17:把排除尾數 list 展開為對應的具體號碼 list。"""
-    if not tails:
-        return []
-    tail_set = set(tails)
-    return [n for n in range(lo, hi + 1) if (n % 10) in tail_set]
-
-
 @st.cache_data(ttl=3600, show_spinner=False)
 def _load_bundled(
     path_str: str,
@@ -69,7 +61,7 @@ def _load_bundled(
 @st.cache_data(ttl=600, show_spinner=False)
 def _freshness_warning(path_str: str) -> str | None:
     """憲法 §2.4:返回 stale 警告字串或 None;cache 10 分鐘避免每 rerun 重讀。"""
-    return check_freshness(Path(path_str), POWERBALL_DRAW_WEEKDAYS)
+    return freshness_warning(path_str, POWERBALL_DRAW_WEEKDAYS)
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -80,11 +72,7 @@ def _load_upload(
     source = f"<upload:{name}>"
     if name.lower().endswith(".json"):
         draws, specials = load_json_string(text)
-        prov = HistoryProvenance(
-            source=source, fetched_at=now_utc(), n_rows=len(draws),
-            as_of=None, earliest=None,
-        )
-        return draws, specials, prov
+        return draws, specials, upload_provenance(source, len(draws))
     return load_csv_string_with_provenance(text, source=source)
 
 
@@ -116,7 +104,7 @@ def cached_analysis(
     dormant_periods: int,
     seed: int,
 ) -> PowerballAnalysis:
-    rng = random.Random(seed) if seed else random.Random()
+    rng = analysis_rng(seed)
     return analyze(
         draws=history, specials=specials,
         hot_sigma_factor=hot_sigma, cold_sigma_factor=cold_sigma,
@@ -345,9 +333,9 @@ def render(sample_csv_path: Path) -> None:
                     _early_history, _early_specials, _ = load_csv_string_with_provenance(
                         pasted, source="<paste:csv>",
                     )
-        except PowerballLoadError:
-            _early_load_failed = True
-        except Exception:  # noqa: BLE001
+        except (PowerballLoadError, OSError):
+            # DR-4(v6.24 T2):收窄至載入類例外,對齊大樂透;非預期例外不靜默吞掉
+            # (§1 Fail Loud)。本路徑僅供 seed 建議,失敗則退回 STATIC_FALLBACK。
             _early_load_failed = True
 
         _early_analysis = STATIC_FALLBACK_ANALYSIS
@@ -513,10 +501,7 @@ def render(sample_csv_path: Path) -> None:
         elif source == "貼上文字" and pasted.strip():
             if pasted.lstrip().startswith(("[", "{")):
                 history, specials = load_json_string(pasted)
-                provenance = HistoryProvenance(
-                    source="<paste:json>", fetched_at=now_utc(),
-                    n_rows=len(history), as_of=None, earliest=None,
-                )
+                provenance = upload_provenance("<paste:json>", len(history))
             else:
                 history, specials, provenance = load_csv_string_with_provenance(
                     pasted, source="<paste:csv>",
@@ -665,11 +650,21 @@ def render(sample_csv_path: Path) -> None:
         st.warning("⚠️ 尚無歷史資料 — 請先載入 CSV 或等 cron 抓檔。")
         return
 
+    # DR-2(v6.24 T2):膽碼 ∩ 排除 衝突檢查(對齊大樂透;否則使用者只會吃 picker
+    # raise 的generic 訊息)。picker resolve_pool_and_keys 仍會擋,此處給友善前置回饋。
+    if manual_keys and excl_arg:
+        _conflict = sorted(set(manual_keys) & set(excl_arg))
+        if _conflict:
+            st.error(
+                f"參數衝突：號碼 {_conflict} 同時被列為膽碼與排除清單，請擇一。"
+            )
+            return
+
     keys_arg = manual_keys
     if batch_disjoint and (manual_keys or analysis.auto_keys):
         st.info("🧩 批次不重複模式已停用膽碼，確保組與組之間 6 號完全不重複。")
 
-    rng = random.Random(int(seed_input)) if seed_input else random.Random()
+    rng = analysis_rng(int(seed_input))
     try:
         tickets, bonus_pick, _ = generate_tickets(
             history_draws=history,
