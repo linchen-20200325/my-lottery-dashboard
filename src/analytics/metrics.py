@@ -33,6 +33,7 @@ from itertools import combinations
 from math import comb
 from pathlib import Path
 
+from src.generator.history_engine import POOL_MAX, POOL_MIN
 from src.generator.lotto_picker import (
     ALLOWED_ODD_COUNTS,
     BIG_THRESHOLD,
@@ -46,7 +47,7 @@ from src.generator.lotto_picker import (
     TICKET_SIZE,
 )
 
-POOL_MIN, POOL_MAX = 1, 49
+# POOL_MIN / POOL_MAX 不在此重刻,改 import 自定義主源 history_engine(SSOT)。
 TOTAL_COMBINATIONS = comb(POOL_MAX, TICKET_SIZE)  # C(49,6) = 13,983,816
 
 
