@@ -80,6 +80,34 @@ class TestAuto(unittest.TestCase):
         self.assertEqual(len(draws), 2)
 
 
+class TestSpecialValidation(unittest.TestCase):
+    """DR-1(v6.22):大樂透特別號改為「有就驗 [1,49]、無則略過」。"""
+
+    def test_out_of_range_special_rejected(self):
+        bad = ("draw_term,draw_date,n1,n2,n3,n4,n5,n6,special\n"
+               "A,2026/06/19,1,2,3,4,5,6,99\n")
+        with self.assertRaises(HistoryLoadError):
+            load_csv_string(bad)
+
+    def test_zero_special_rejected(self):
+        # scraper 缺值 coercion 會寫 0;0 不在 [1,49] → 應擋
+        bad = ("draw_term,draw_date,n1,n2,n3,n4,n5,n6,special\n"
+               "A,2026/06/19,1,2,3,4,5,6,0\n")
+        with self.assertRaises(HistoryLoadError):
+            load_csv_string(bad)
+
+    def test_missing_special_column_still_loads(self):
+        # 無 special 欄(非分析必需)→ 不強制、正常載入
+        ok = "n1,n2,n3,n4,n5,n6\n1,2,3,4,5,6\n"
+        self.assertEqual(load_csv_string(ok), [[1, 2, 3, 4, 5, 6]])
+
+    def test_valid_special_passes_and_is_discarded(self):
+        good = ("draw_term,draw_date,n1,n2,n3,n4,n5,n6,special\n"
+                "A,2026/06/19,5,12,18,25,33,42,7\n")
+        # 回傳仍是 list[list[int]],special 驗後丟棄
+        self.assertEqual(load_csv_string(good), [[5, 12, 18, 25, 33, 42]])
+
+
 class TestPreviewRecent(unittest.TestCase):
     def test_csv_string_first_n_with_metadata(self):
         preview = preview_recent(GOOD_CSV, limit=5)
