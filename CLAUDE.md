@@ -250,7 +250,7 @@ assert dates[0] >= dates[-1], "CSV must be newest-first"
 | `set(gaps.keys()) == set(range(POOL_MIN, POOL_MAX+1))` | `analyze()` 返回前 | ✅ v6.4 |
 | `set(hot) ∪ set(warm) ∪ set(cold) == 全 pool` | `analyze()` 返回前 | ✅ v6.4 |
 | `sum_min_dynamic ≤ sum_max_dynamic` | `analyze()` 返回前(配合 `_dynamic_sum_range` lo>hi collapse 修復) | ✅ v6.4 |
-| `len(merged) >= len(existing)` (append-only 保證) | 兩 scraper `download()` 返回前 | ✅ v6.4 |
+| `len(merged) >= len(existing)` (append-only 保證) | `_downloader_base.run_download()` 返回前(v6.22 起兩 scraper 委派) | ✅ v6.4 |
 | CSV newest-first 順序 | `backtest._read_csv` | ✅ v6.3.1 |
 | `history_specials` 全 ∈ [1, 8] | `_bonus_analyze` | ✅ v6.3.1 |
 | `bonus_pick ∈ [1, 8]` | `powerball_picker / powerball_engine` 返回前 | ✅ v6.4 |

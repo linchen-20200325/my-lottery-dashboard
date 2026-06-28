@@ -178,8 +178,8 @@ def check_invariant_asserts_present() -> list[Violation]:
         "src/generator/powerball_engine.py": "set(hot) | set(warm) | set(cold)",
         "src/generator/lotto_picker.py": "ticket invariant violated",
         "src/generator/powerball_picker.py": "ticket invariant violated",
-        "src/scraper/lotto649_downloader.py": "append-only violated",
-        "src/scraper/powerball_downloader.py": "append-only violated",
+        # v6.22 B2:append-only assert 收斂至共用底座 run_download(兩 scraper 委派之)
+        "src/scraper/_downloader_base.py": "append-only violated",
     }
     for path, sentinel in required.items():
         p = ROOT / path
