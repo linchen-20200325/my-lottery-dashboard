@@ -133,6 +133,24 @@ max_consecutive_pairs, min/max_key_nums
 
 `backtest.py`/`metrics.py` 接受 `DomainConfig` 參數,讓威力彩也有壓縮率/回測 —— **此項影響演算法行為,屬獨立 PR,不混進純重構**。
 
+### 5.6 OOP 分層收納總表(DataFetcher / CalcEngine / ComponentUI)
+
+把上述 base 模組明確對齊「分層 + 物件導向」三大層,**每個職責一個 owner,拒絕碎片化**。左欄為概念層(類別),中欄為落地模組,右欄為「同一份邏輯目前散在哪 → 收斂後歸誰」:
+
+| 概念層(類別 / 介面) | 落地模組 | 現狀(散落)→ 收斂後(SSOT owner) |
+|---|---|---|
+| **DomainConfig**(SSOT 核心,frozen dataclass) | `src/generator/domain.py` | `TICKET_SIZE`×4、`POOL_*`(含 `metrics.py:49` 重刻)、兩 `DEFAULTS`、`BIG_THRESHOLD`/`PRIMES_SET`/sum clamp、UI 和值邊界硬寫 → **全部 → `LOTTO649` / `POWERBALL` 兩實例** |
+| **DataFetcher**(抽象)→ `Lotto649Fetcher` / `PowerballFetcher` | `src/scraper/_downloader_base.py` + 兩薄 config | 兩 `*_downloader.py` 85-90% copy-paste(8 常數 + `Draw` + `_build_session`…)→ **base 一份,子類僅注入 `api_path`/`response_fields`/`_parse_row`** |
+| **HistoryLoader**(抽象,吃 `DomainConfig`) | `src/data/_loader_base.py` + 兩薄 shim | 兩 `loader*.py` 75-80% copy-paste;`_validate_special` 僅威力彩有 → **base 一份,`special_range=None` 時跳過驗證;順手補 DR-1 大樂透特別號** |
+| **DateParser / ProvenanceTracker / FreshnessChecker**(已近共用) | `src/data/_dates.py`(新)+ `provenance.py` + `freshness.py` | `_canon_date` 四處重複 → **單一 `canon_date()`** |
+| **SignalEngine**(基)→ `MainZoneEngine` + `BonusZone` mixin | `src/generator/base_engine.py` | 兩 `*_engine.py` 80% copy-paste;`_gaps`/`_z_layer` 已參數化 → **base 一份,威力彩 mixin 疊 `_bonus_analyze`** |
+| **TicketPicker**(基)+ 策略:`FilterStrategy` / `HowardStrategy` / `DisjointStrategy` | `src/generator/base_picker.py` | 兩 `*_picker.py` 90% copy-paste;5 濾網被埋在 Howard 擴充裡(DR-3)→ **base 跑 5 濾網,Howard/disjoint 作可插拔策略,大樂透才注入 Howard** |
+| **WheelGenerator**(獨立,不混濾網) | `src/generator/abbreviated_wheel.py`(**維持原樣**) | covering 數學保證 → **紅線,不進 base** |
+| **Analytics**:`CompressionMetric` / `SurvivalMetric` / `Backtester` / `CostCalculator` | `src/analytics/*.py` + `DomainConfig` 參數化(B6) | 目前寫死 6/49 → **吃 config 後雙樂透共用一套** |
+| **ComponentUI**:`LotteryView`(基)→ `Lotto649View` / `PowerballView`;子元件 `DataSourceSelector` / `SignalParamsPanel` / `ExclusionPanel` / `ResultTable` / `FallbackNotice` | `src/ui/_view_base.py` + 兩薄 view | 兩 `*_view.py` 70-75% copy-paste(12 helper + 設定階梯)→ **共用元件一份,view 只組裝 + 注入自家差異(Howard/wheel vs 第二區)** |
+
+**讀法**:由上而下即依賴方向 —— `DomainConfig` 被所有層讀;`DataFetcher`/`HistoryLoader` 餵 `SignalEngine` → `TicketPicker` → `ComponentUI` 組裝。每一橫列把「現在散在兩檔的同一份邏輯」收斂到單一 owner,這就是排毒的收納格。
+
 ---
 
 ## §6. 建議執行順序(低風險 → 高風險,分批 PR)
