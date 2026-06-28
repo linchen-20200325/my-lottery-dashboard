@@ -124,7 +124,7 @@ if parse_csv_latest_date(history) < expected_latest_draw(now, {1, 4}):
 | 欄位 | 型別 | 約束 | 驗證點 |
 |---|---|---|---|
 | `draw_term` | `str` | 非空;`int(term)` 可解析;`_term_sort_key` 分桶 | `lotto649_downloader.py:247-268` |
-| `draw_date` | `str` | 空字串(已清洗,合法)或 `YYYY/MM/DD` 且 `datetime.date(y,m,d)` 合法 | `_canon_date()` (`lotto649_downloader.py:63-86`;v6.3.1 已加日期合法性驗證) |
+| `draw_date` | `str` | 空字串(已清洗,合法)或 `YYYY/MM/DD` 且 `datetime.date(y,m,d)` 合法 | `canon_date()`(`scraper/_dates.py`,SSOT;v6.22 起兩 scraper `_canon_date` 委派之;v6.3.1 已加日期合法性驗證) |
 | `n1..n6` | `int` | 大樂透 ∈ [1, 49] 且 6 顆無重複;威力彩 ∈ [1, 38] 且 6 顆無重複 | `loader.py:27-39`、`loader_powerball.py:23-37` |
 | `special` | `int` | 大樂透 ∈ [1, 49];威力彩 ∈ [1, 8] | `loader_powerball.py:40-45`(大樂透特別號目前 loader 未獨立驗證,scraper 端寫入時保證) |
 | `draws: list[list[int]]`(in-memory) | sequence | newest-first;每列 6 unique ints | `history_engine.py:185`、`powerball_engine.py:204` |

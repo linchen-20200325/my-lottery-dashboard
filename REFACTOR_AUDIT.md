@@ -121,9 +121,13 @@ max_consecutive_pairs, min/max_key_nums
 
 **順手修掉的漂移**(抽共用時自然收斂):DR-1(大樂透補 `special_range=(1,49)`)、DR-2(衝突驗證套用兩邊)、DR-3(濾網單一實作)、DR-4/DR-5(統一 except 政策)、DR-6(`_preview_json` 統一 bonus 別名)、DR-8(常數單一 import)。
 
-### 5.3 SSOT:`_canon_date` 收一處
+### 5.3 SSOT:`_canon_date` 收一處 ✅(B1b 已落地)
 
-四處 `YYYY/MM/DD` 解析 → 抽 `src/data/_dates.py` 單一 `canon_date()`,由兩 scraper + `provenance` + `freshness` 共用。
+兩 scraper 的 `_canon_date`(寬鬆正規化「髒」API 輸入)→ 抽 `src/scraper/_dates.py`
+單一 `canon_date()`,兩 scraper 委派之。**`provenance.extract_dates` /
+`freshness.latest_csv_date` 刻意不併** —— 它們用 `strptime` 嚴格解析「已標準化」
+的 CSV 日期成 `date` 物件,契約不同(要 date、跳過非標準列),強併反而會改行為
+(抽共用、留差異;§1 Fail Loud)。故收斂範圍 = 2 份真重複,非原估的 4 份。
 
 ### 5.4 歸檔(去 dead weight)
 

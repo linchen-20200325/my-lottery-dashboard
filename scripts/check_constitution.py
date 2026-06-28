@@ -134,22 +134,27 @@ def check_newest_first_invariant() -> list[Violation]:
 
 
 def check_canon_date_validates() -> list[Violation]:
-    """CLAUDE.md §3.1 schema:_canon_date 必須有 datetime.date(y,m,d) 合法性驗證。"""
+    """CLAUDE.md §3.1 schema:canon_date 必須有 datetime.date(y,m,d) 合法性驗證。
+
+    v6.22 SSOT 重構:日期正規化邏輯收斂至 src/scraper/_dates.py(canon_date),
+    兩 scraper 的 _canon_date 委派之。本檢查驗證單一來源含日期合法性驗證。
+    """
     out: list[Violation] = []
-    for path in (
-        "src/scraper/lotto649_downloader.py",
-        "src/scraper/powerball_downloader.py",
-    ):
-        p = ROOT / path
-        if not p.exists():
-            continue
-        content = p.read_text()
-        if "date(y, m, d)" not in content.replace(" ", "") and "date(y,m,d)" not in content.replace(" ", ""):
-            # 寬鬆比對:剝空白後找 date(y,m,d)
-            out.append(Violation(
-                "canon-date-validates", path, 0, "",
-                "_canon_date missing date(y,m,d) validation (CLAUDE.md §3.1)",
-            ))
+    path = "src/scraper/_dates.py"
+    p = ROOT / path
+    if not p.exists():
+        out.append(Violation(
+            "canon-date-validates", path, 0, "",
+            "src/scraper/_dates.py (canon_date SSOT) missing (CLAUDE.md §3.1)",
+        ))
+        return out
+    content = p.read_text().replace(" ", "")
+    if "date(y,m,d)" not in content:
+        # 寬鬆比對:剝空白後找 date(y,m,d)
+        out.append(Violation(
+            "canon-date-validates", path, 0, "",
+            "canon_date missing date(y,m,d) validation (CLAUDE.md §3.1)",
+        ))
     return out
 
 

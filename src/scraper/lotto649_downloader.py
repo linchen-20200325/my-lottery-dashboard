@@ -39,6 +39,8 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from src.scraper._dates import canon_date
+
 LOGGER = logging.getLogger("lotto649")
 DEFAULT_OUTPUT = Path("data/lotto649.csv")
 CSV_FIELDS = [
@@ -70,31 +72,8 @@ MONTHS_BUFFER = 2
 
 
 def _canon_date(s: str) -> str:
-    """Normalize date strings to `YYYY/MM/DD` (zero-padded).
-
-    Accepts: '2026/5/12', '2026-05-15', '2026-05-15T00:00:00', etc.
-    Returns "" for structurally parseable but impossible dates
-    (e.g. 2026/02/30, 2026/13/05); returns input unchanged if
-    numerical parsing itself fails (preserves upstream noise
-    for diagnostic logs). Used as the dedupe key because the
-    official API changed `draw_term` schemes (e.g. old `2446`
-    vs new `115000053`) — date is the stable identifier.
-    """
-    if not s:
-        return ""
-    head = s[:10].replace("-", "/")
-    parts = head.split("/")
-    if len(parts) >= 3:
-        try:
-            y, m, d = int(parts[0]), int(parts[1]), int(parts[2])
-        except ValueError:
-            return s
-        try:
-            date(y, m, d)  # validate impossible dates like 2/30, 13/05
-        except ValueError:
-            return ""
-        return f"{y:04d}/{m:02d}/{d:02d}"
-    return s
+    """Delegates to scraper._dates.canon_date — single source (REFACTOR_AUDIT §5.3)."""
+    return canon_date(s)
 
 
 @dataclass(frozen=True)

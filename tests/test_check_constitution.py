@@ -91,11 +91,12 @@ class TestRulesActuallyCatchViolations(unittest.TestCase):
             self.assertEqual(len(violations), 1)
 
     def test_canon_date_without_validation(self):
+        # v6.22:正規化邏輯收斂至 src/scraper/_dates.py;注入無驗證版本應被抓到。
         with TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             (tmp_path / "src" / "scraper").mkdir(parents=True)
-            bad = tmp_path / "src" / "scraper" / "lotto649_downloader.py"
-            bad.write_text("def _canon_date(s):\n    return s  # no validation\n")
+            bad = tmp_path / "src" / "scraper" / "_dates.py"
+            bad.write_text("def canon_date(s):\n    return s  # no validation\n")
             with patch("scripts.check_constitution.ROOT", tmp_path):
                 violations = check_canon_date_validates()
             self.assertEqual(len(violations), 1)

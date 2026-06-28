@@ -25,6 +25,8 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from src.scraper._dates import canon_date
+
 LOGGER = logging.getLogger("powerball")
 DEFAULT_OUTPUT = Path("data/powerball.csv")
 CSV_FIELDS = [
@@ -56,26 +58,8 @@ MONTHS_BUFFER = 2
 
 
 def _canon_date(s: str) -> str:
-    """Normalize to `YYYY/MM/DD` (zero-padded).
-
-    Returns "" for structurally parseable but impossible dates (2/30,
-    13/05 etc.); returns input unchanged if numerical parsing fails.
-    """
-    if not s:
-        return ""
-    head = s[:10].replace("-", "/")
-    parts = head.split("/")
-    if len(parts) >= 3:
-        try:
-            y, m, d = int(parts[0]), int(parts[1]), int(parts[2])
-        except ValueError:
-            return s
-        try:
-            date(y, m, d)
-        except ValueError:
-            return ""
-        return f"{y:04d}/{m:02d}/{d:02d}"
-    return s
+    """Delegates to scraper._dates.canon_date — single source (REFACTOR_AUDIT §5.3)."""
+    return canon_date(s)
 
 
 @dataclass(frozen=True)
