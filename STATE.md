@@ -119,6 +119,7 @@ my-lottery-2026/
 ## 深層拔毒 Phase 3 — domain.py 升真 SSOT + 死碼清除(v6.24,進行中)
 > 依《深層毒素稽核報告》同意藍圖:T1(domain 真 SSOT)→ T4(小修/死碼)→ T2(B5 UI)→ T3(B6)。一次一檔、golden 守、per-file commit。
 - [x] **T1-a `history_engine.py`**:刪自刻 `POOL/DEFAULTS/STATIC_SUM`(1,49 / DEFAULTS dict / 120,180)→ import `domain.LOTTO649`;消費端名稱不變、值由 test_domain 對帳;golden 全 seed MATCH、43 測試綠。解 S1 影子 SSOT(大樂透側)。
+- [x] **T1-b `powerball_engine.py` + `domain.py` docstring**:刪自刻 `MAIN_POOL/BONUS_POOL/DEFAULTS/STATIC_SUM`(1,38 / 1,8 / 90,144)→ import `domain.POWERBALL`;`domain.py` docstring 由「additive 尚未消費」更正為「真 SSOT」。golden MATCH、40 測試綠。S1 影子 SSOT **全消**(engine 層雙側皆 import domain)。
 
 ## SSOT 全域排毒重構 Phase 2 — B4 引擎 + 選號收斂(v6.23)
 - [x] **B4b:新增 `src/generator/base_picker.py`,兩選號器 ~90% copy-paste 收斂為共用骨架** ✅ B4 完成(B4a+B4b)

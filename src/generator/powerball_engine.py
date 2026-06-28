@@ -23,33 +23,24 @@ from src.generator.base_engine import (
     analyze_main_zone,
     validate_analyze_params,
 )
+from src.generator.domain import POWERBALL as _DOM
 
+# 領域常數單一真實來源 = domain.POWERBALL(v6.24 T1:消除「影子 SSOT」,引擎不再自刻
+# 1/38、1/8、DEFAULTS dict、90/144)。名稱維持原樣供既有消費端零摩擦 import,
+# 值由 test_domain.py 對帳鎖定。
 # 第一區 (主號碼池)
-MAIN_POOL_MIN, MAIN_POOL_MAX = 1, 38
-TICKET_SIZE = 6
+MAIN_POOL_MIN, MAIN_POOL_MAX = _DOM.pool_min, _DOM.pool_max
+TICKET_SIZE = _DOM.ticket_size
 # 第二區 (特別號池)
-BONUS_POOL_MIN, BONUS_POOL_MAX = 1, 8
+BONUS_POOL_MIN, BONUS_POOL_MAX = _DOM.special_min, _DOM.special_max
 
-# 預設參數（vs 大樂透：池小 → pad 緊一階、clamp 縮窄）
-DEFAULTS = {
-    "hot_sigma_factor": 0.5,
-    "cold_sigma_factor": 1.5,
-    "min_std": 1.0,
-    "hot_threshold_floor": 2,
-    "sum_sma_window": 10,
-    "sum_range_pad": 25,
-    "sum_clamp_lo": 80,         # 6 from 1-38 安全下限（理論最小 21）
-    "sum_clamp_hi": 154,        # 6 from 1-38 安全上限（理論最大 213）
-    # Tail signals (v6.10: 放寬 default 讓常見情況也能觸發訊號)
-    # 詳見 history_engine.DEFAULTS 同段註解
-    "overheat_recent_periods": 3,
-    "overheat_min_count": 3,
-    "dormant_periods": 8,
-}
+# 預設參數來自 domain.POWERBALL.defaults(vs 大樂透:池小 → pad 緊一階 25、
+# clamp 縮窄 [80,154];sum_clamp_lo 理論最小 21、sum_clamp_hi 理論最大 213;
+# tail 訊號 v6.10 放寬同 history_engine.DEFAULTS 段註解)。
+DEFAULTS = _DOM.defaults
 
 # 靜態 fallback（Phase 2 容錯）
-STATIC_SUM_MIN = 90
-STATIC_SUM_MAX = 144
+STATIC_SUM_MIN, STATIC_SUM_MAX = _DOM.static_sum_min, _DOM.static_sum_max
 
 
 @dataclass(frozen=True)
