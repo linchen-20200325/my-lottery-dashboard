@@ -12,12 +12,17 @@ Stdlib only：`random` + `itertools`。
 
 from __future__ import annotations
 
-import math
 import random
-from collections import Counter
 from itertools import combinations
 from typing import Iterable, Sequence
 
+from src.generator.base_picker import (
+    generate_batch_disjoint as _base_generate_batch_disjoint,
+    passes_base_filters as _passes_base_filters,
+    resolve_pool_and_keys as _resolve_pool_and_keys,
+    validate_history as _base_validate_history,
+    validate_num_tickets as _validate_num_tickets,
+)
 from src.generator.powerball_engine import (
     BONUS_POOL_MAX,
     BONUS_POOL_MIN,
@@ -48,38 +53,13 @@ MAX_PRIME_COUNT = _DOM.max_prime_count
 MAX_CONSECUTIVE_PAIRS = _DOM.max_consecutive_pairs
 
 
-# --- Validation helpers -------------------------------------------------------
-
-
-def _ensure_int_list(name: str, values: Iterable[int]) -> list[int]:
-    out: list[int] = []
-    for v in values:
-        if isinstance(v, bool) or not isinstance(v, int):
-            raise ValueError(f"{name} must contain integers only (got {v!r})")
-        out.append(v)
-    return out
-
-
-def _validate_range(name: str, values: list[int], lo: int, hi: int) -> None:
-    for v in values:
-        if not (lo <= v <= hi):
-            raise ValueError(f"{name} value {v} out of range [{lo}, {hi}]")
-
-
-def _validate_unique(name: str, values: list[int]) -> None:
-    if len(set(values)) != len(values):
-        raise ValueError(f"{name} must not contain duplicates")
+# --- Validation / 濾網 / 批次骨架(委派 base_picker;SSOT v6.23 B4b)-----------
 
 
 def _validate_history(draws: Sequence[Sequence[int]]) -> None:
-    if not draws:
-        raise ValueError("history_draws must not be empty")
-    for i, d in enumerate(draws):
-        if len(d) != TICKET_SIZE:
-            raise ValueError(f"history_draws[{i}] must have 6 numbers")
-        ints = _ensure_int_list(f"history_draws[{i}]", d)
-        _validate_range(f"history_draws[{i}]", ints, MAIN_POOL_MIN, MAIN_POOL_MAX)
-        _validate_unique(f"history_draws[{i}]", ints)
+    _base_validate_history(
+        draws, pool_min=MAIN_POOL_MIN, pool_max=MAIN_POOL_MAX, ticket_size=TICKET_SIZE,
+    )
 
 
 def _passes_filters(
@@ -89,25 +69,10 @@ def _passes_filters(
     *,
     apply_secondary: bool,
 ) -> bool:
-    """威力彩 §6 五大濾網（與大樂透同形、參數重校）。"""
-    if not (s_lo <= sum(ticket) <= s_hi):
-        return False
-    if not apply_secondary:
-        return True
-    odd_count = sum(1 for n in ticket if n % 2 == 1)
-    if odd_count not in ALLOWED_ODD_COUNTS:
-        return False
-    if sum(1 for n in ticket if n > BIG_THRESHOLD) < MIN_BIG_COUNT:
-        return False
-    prime_count = sum(1 for n in ticket if n in PRIMES_SET)
-    if not (MIN_PRIME_COUNT <= prime_count <= MAX_PRIME_COUNT):
-        return False
-    consecutive_pairs = sum(
-        1 for i in range(TICKET_SIZE - 1) if ticket[i + 1] - ticket[i] == 1
+    """威力彩 §6 五大濾網（base_picker 單一實作,濾網常數來自 DomainConfig）。"""
+    return _passes_base_filters(
+        ticket, s_lo, s_hi, apply_secondary=apply_secondary, cfg=_DOM,
     )
-    if consecutive_pairs > MAX_CONSECUTIVE_PAIRS:
-        return False
-    return True
 
 
 def _generate_batch_disjoint(
@@ -119,62 +84,22 @@ def _generate_batch_disjoint(
     num_tickets: int,
     rng: random.Random,
 ) -> list[tuple[int, ...]]:
-    """批次覆蓋模式(v6.15):嚴格 pair-disjoint + 均衡硬上限。
+    """批次 pair-disjoint(v6.13/v6.15);三相漸進降級委派 base 骨架。
 
-    v6.13:任意 2 顆配對在所有注中至多出現一次。
-    v6.15:加「每號出現次數 ≤ ⌈6N/P⌉ + 1」均衡硬上限(容差 1);
-            防止 pair-disjoint 雖不重複但某號 0 次、某號 5 次的高方差分佈。
-
-    理論上限 = ⌊C(pool, 2) / C(6, 2)⌋(扣濾網實際更少)。
-
-    三相 filter 漸進降級,每相內嚴格 pair-disjoint + 均衡 cap:
-    - sub-A: dynamic sum (s_lo, s_hi) + full 5 filters
-    - sub-B: static [SUM_MIN, SUM_MAX] + full 5 filters
+    - sub-A: dynamic sum (s_lo, s_hi) + 五濾網
+    - sub-B: static [SUM_MIN, SUM_MAX] + 五濾網
     - sub-C: 無 sum 邊界 + 無次要濾網
-
-    湊不到 num_tickets 直接 return,呼叫端負責 warn。
     """
-    results: list[tuple[int, ...]] = []
-    seen: set[tuple[int, ...]] = set()
-    used_pairs: set[tuple[int, int]] = set()
-    usage: Counter[int] = Counter()
-    # v6.15 均衡硬上限:每號出現 ≤ ⌈6N/P⌉ + 1(容差 1)
-    max_per_number = math.ceil(TICKET_SIZE * num_tickets / len(pool)) + 1
-
-    drag_candidates = pool - key_set
-    needed = TICKET_SIZE - len(key_set)
-    if len(drag_candidates) < needed:
-        return results
-    all_combos = list(combinations(sorted(drag_candidates), needed))
-    rng.shuffle(all_combos)
-
     sub_rounds = (
-        ((s_lo, s_hi), True),
-        ((SUM_MIN, SUM_MAX), True),
-        ((TICKET_SIZE * MAIN_POOL_MIN, TICKET_SIZE * MAIN_POOL_MAX), False),
+        (s_lo, s_hi, dict(apply_secondary=True)),
+        (SUM_MIN, SUM_MAX, dict(apply_secondary=True)),
+        (TICKET_SIZE * MAIN_POOL_MIN, TICKET_SIZE * MAIN_POOL_MAX,
+         dict(apply_secondary=False)),
     )
-    for (sub_lo, sub_hi), apply_full in sub_rounds:
-        if len(results) >= num_tickets:
-            break
-        for combo in all_combos:
-            if len(results) >= num_tickets:
-                break
-            ticket = tuple(sorted(key_set.union(combo)))
-            if ticket in seen:
-                continue
-            if any(usage[n] >= max_per_number for n in ticket):
-                continue  # v6.15 均衡硬上限
-            if not _passes_filters(ticket, sub_lo, sub_hi, apply_secondary=apply_full):
-                continue
-            new_pairs = set(combinations(ticket, 2))
-            if new_pairs & used_pairs:  # 嚴格 pair-disjoint: 任一共 pair 即拒
-                continue
-            results.append(ticket)
-            seen.add(ticket)
-            used_pairs |= new_pairs
-            usage.update(ticket)
-
-    return results
+    return _base_generate_batch_disjoint(
+        pool=pool, key_set=key_set, num_tickets=num_tickets, rng=rng,
+        ticket_size=TICKET_SIZE, sub_rounds=sub_rounds, passes=_passes_filters,
+    )
 
 
 # --- Core algorithm -----------------------------------------------------------
@@ -207,11 +132,7 @@ def generate_tickets(
     Raises ValueError on invalid input or unsatisfiable configuration.
     """
     _validate_history(history_draws)
-
-    if not isinstance(num_tickets, int) or isinstance(num_tickets, bool):
-        raise ValueError("num_tickets must be an integer")
-    if num_tickets < 1:
-        raise ValueError("num_tickets must be >= 1")
+    _validate_num_tickets(num_tickets)
 
     rng = rng if rng is not None else random.Random()
 
@@ -232,60 +153,22 @@ def generate_tickets(
             rng=rng,
         )
 
-    # --- Phase 2: 第一區 pool + 雙膽 ---
-    if manual_excluded_tails is not None:
-        excl = _ensure_int_list("manual_excluded_tails", manual_excluded_tails)
-        _validate_range("manual_excluded_tails", excl, 0, 9)
-        _validate_unique("manual_excluded_tails", excl)
-        tail_set = set(excl)
-    else:
-        tail_set = set(analysis.exclude_tails)
-
-    pool: set[int] = {
-        n for n in range(MAIN_POOL_MIN, MAIN_POOL_MAX + 1)
-        if (n % 10) not in tail_set
-    }
-
-    excl_nums: list[int] = []
-    if manual_excluded_numbers is not None:
-        excl_nums = _ensure_int_list("manual_excluded_numbers", manual_excluded_numbers)
-        _validate_range("manual_excluded_numbers", excl_nums, MAIN_POOL_MIN, MAIN_POOL_MAX)
-        _validate_unique("manual_excluded_numbers", excl_nums)
-        pool -= set(excl_nums)
-
-    if manual_keys is not None:
-        keys = _ensure_int_list("manual_keys", manual_keys)
-        _validate_range("manual_keys", keys, MAIN_POOL_MIN, MAIN_POOL_MAX)
-        _validate_unique("manual_keys", keys)
-        if not (MIN_KEY_NUMS <= len(keys) <= MAX_KEY_NUMS):
-            raise ValueError(
-                f"manual_keys must contain {MIN_KEY_NUMS}-{MAX_KEY_NUMS} numbers"
-            )
-        key_set = set(keys)
-        if manual_excluded_numbers is not None:
-            conflict = key_set & set(excl_nums)
-            if conflict:
-                raise ValueError(
-                    f"keys {sorted(conflict)} conflict with manual_excluded_numbers"
-                )
-    else:
-        keys = list(analysis.auto_keys)
-        if len(keys) > MAX_KEY_NUMS:
-            raise ValueError(
-                f"auto_keys yielded {len(keys)} > max {MAX_KEY_NUMS}"
-            )
-        key_set = set(keys) - set(excl_nums)
-        keys = sorted(key_set)
-
-    drag_candidates = pool - key_set
-    needed = TICKET_SIZE - len(key_set)
-    if len(drag_candidates) < needed:
-        raise ValueError(
-            f"insufficient drag candidates: need {needed}, "
-            f"available {len(drag_candidates)} (after excluding tails {sorted(tail_set)})"
-        )
+    # --- Phase 2: 第一區 pool + 雙膽（委派 base_picker;SSOT v6.23 B4b）---
+    pool, key_set = _resolve_pool_and_keys(
+        analysis,
+        pool_min=MAIN_POOL_MIN,
+        pool_max=MAIN_POOL_MAX,
+        ticket_size=TICKET_SIZE,
+        min_key_nums=MIN_KEY_NUMS,
+        max_key_nums=MAX_KEY_NUMS,
+        manual_excluded_tails=manual_excluded_tails,
+        manual_excluded_numbers=manual_excluded_numbers,
+        manual_keys=manual_keys,
+    )
 
     # --- Phase 3: matrix shuffling ---
+    drag_candidates = pool - key_set
+    needed = TICKET_SIZE - len(key_set)
     drag_sorted = sorted(drag_candidates)
     all_combos = list(combinations(drag_sorted, needed))
     rng.shuffle(all_combos)

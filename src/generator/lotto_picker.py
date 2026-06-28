@@ -19,12 +19,18 @@ Stdlib only: `random` + `itertools` (+ `collections`/`statistics` via engine).
 
 from __future__ import annotations
 
-import math
 import random
 from collections import Counter
 from itertools import combinations
 from typing import Iterable, Sequence
 
+from src.generator.base_picker import (
+    generate_batch_disjoint as _base_generate_batch_disjoint,
+    passes_base_filters as _passes_base_filters,
+    resolve_pool_and_keys as _resolve_pool_and_keys,
+    validate_history as _base_validate_history,
+    validate_num_tickets as _validate_num_tickets,
+)
 from src.generator.history_engine import (
     DEFAULTS,
     HistoryAnalysis,
@@ -91,38 +97,13 @@ HOWARD_SOFT_MIN_SCORE = 3                           # 5 條軟分 >= 3 才通過
 HOWARD_MIN_HISTORY = 5                              # 史料 < 5 期禁用 Howard
 
 
-# --- Validation helpers -------------------------------------------------------
-
-
-def _ensure_int_list(name: str, values: Iterable[int]) -> list[int]:
-    out: list[int] = []
-    for v in values:
-        if isinstance(v, bool) or not isinstance(v, int):
-            raise ValueError(f"{name} must contain integers only (got {v!r})")
-        out.append(v)
-    return out
-
-
-def _validate_range(name: str, values: list[int], lo: int, hi: int) -> None:
-    for v in values:
-        if not (lo <= v <= hi):
-            raise ValueError(f"{name} value {v} out of range [{lo}, {hi}]")
-
-
-def _validate_unique(name: str, values: list[int]) -> None:
-    if len(set(values)) != len(values):
-        raise ValueError(f"{name} must not contain duplicates")
+# --- Validation helpers(委派 base_picker;SSOT v6.23 B4b)----------------------
 
 
 def _validate_history(draws: Sequence[Sequence[int]]) -> None:
-    if not draws:
-        raise ValueError("history_draws must not be empty")
-    for i, d in enumerate(draws):
-        if len(d) != TICKET_SIZE:
-            raise ValueError(f"history_draws[{i}] must have 6 numbers")
-        ints = _ensure_int_list(f"history_draws[{i}]", d)
-        _validate_range(f"history_draws[{i}]", ints, POOL_MIN, POOL_MAX)
-        _validate_unique(f"history_draws[{i}]", ints)
+    _base_validate_history(
+        draws, pool_min=POOL_MIN, pool_max=POOL_MAX, ticket_size=TICKET_SIZE,
+    )
 
 
 def _howard_hard_pass(ticket: tuple[int, ...], s_lo: int, s_hi: int) -> bool:
@@ -188,6 +169,21 @@ def _howard_soft_score(
     return score
 
 
+def _decade_basement_ok(
+    ticket: tuple[int, ...], basement_set: frozenset[int]
+) -> bool:
+    """大樂透附加濾網(v6.16 #4 字頭 + #11 谷底);作 base_picker `extra` hook。"""
+    # v6.16 Howard #4: 至少 MIN_EMPTY_DECADES 個字頭區間完全空
+    ticket_set = frozenset(ticket)
+    empty = sum(1 for band in DECADE_BANDS if not (band & ticket_set))
+    if empty < MIN_EMPTY_DECADES:
+        return False
+    # v6.16 Howard #11 谷底陷阱: ticket ∩ cold 顆數 ≤ MAX_BASEMENT_PER_TICKET
+    if basement_set and sum(1 for n in ticket if n in basement_set) > MAX_BASEMENT_PER_TICKET:
+        return False
+    return True
+
+
 def _passes_filters(
     ticket: tuple[int, ...],
     s_lo: int,
@@ -206,6 +202,9 @@ def _passes_filters(
 
     `howard_mode=True` ⇒ #1/#2/#3 硬綁 + #4-#8 軟分 ≥ HOWARD_SOFT_MIN_SCORE;
     谷底陷阱(v6.16 #11)仍生效雙重保險。
+
+    非 Howard 路徑:基礎 5 濾網委派 `base_picker.passes_base_filters`,字頭+谷底
+    以 `extra` hook 注入(v6.23 B4b;DR-3 — 質數等濾網單一實作,改一處兩邊同步)。
     """
     if howard_mode and apply_secondary:
         if not _howard_hard_pass(ticket, s_lo, s_hi):
@@ -217,32 +216,10 @@ def _passes_filters(
             return False
         return True
 
-    if not (s_lo <= sum(ticket) <= s_hi):
-        return False
-    if not apply_secondary:
-        return True
-    odd_count = sum(1 for n in ticket if n % 2 == 1)
-    if odd_count not in ALLOWED_ODD_COUNTS:
-        return False
-    if sum(1 for n in ticket if n > BIG_THRESHOLD) < MIN_BIG_COUNT:
-        return False
-    prime_count = sum(1 for n in ticket if n in PRIMES_SET)
-    if not (MIN_PRIME_COUNT <= prime_count <= MAX_PRIME_COUNT):
-        return False
-    consecutive_pairs = sum(
-        1 for i in range(TICKET_SIZE - 1) if ticket[i + 1] - ticket[i] == 1
+    return _passes_base_filters(
+        ticket, s_lo, s_hi, apply_secondary=apply_secondary, cfg=_DOM,
+        extra=lambda t: _decade_basement_ok(t, basement_set),
     )
-    if consecutive_pairs > MAX_CONSECUTIVE_PAIRS:
-        return False
-    # v6.16 Howard #4: 至少 MIN_EMPTY_DECADES 個字頭區間完全空
-    ticket_set = frozenset(ticket)
-    empty = sum(1 for band in DECADE_BANDS if not (band & ticket_set))
-    if empty < MIN_EMPTY_DECADES:
-        return False
-    # v6.16 Howard #11 谷底陷阱: ticket ∩ cold 顆數 ≤ MAX_BASEMENT_PER_TICKET
-    if basement_set and sum(1 for n in ticket if n in basement_set) > MAX_BASEMENT_PER_TICKET:
-        return False
-    return True
 
 
 def _generate_batch_disjoint(
@@ -276,64 +253,37 @@ def _generate_batch_disjoint(
 
     湊不到 num_tickets 直接 return,呼叫端負責 warn。
     """
-    results: list[tuple[int, ...]] = []
-    seen: set[tuple[int, ...]] = set()
-    used_pairs: set[tuple[int, int]] = set()
-    usage: Counter[int] = Counter()
-    # v6.15 均衡硬上限:每號出現 ≤ ⌈6N/P⌉ + 1(容差 1)
-    max_per_number = math.ceil(TICKET_SIZE * num_tickets / len(pool)) + 1
-
-    drag_candidates = pool - key_set
-    needed = TICKET_SIZE - len(key_set)
-    if len(drag_candidates) < needed:
-        return results  # caller already validated drag pool size; defensive
-    all_combos = list(combinations(sorted(drag_candidates), needed))
-    rng.shuffle(all_combos)
-
-    # 3-tuple: ((sum_lo, sum_hi), apply_secondary, use_howard)
+    # 委派 base_picker.generate_batch_disjoint(v6.23 B4b);sub_rounds 編碼漸進降級。
+    # 每相 filter_kwargs 透傳給 _passes_filters:(sub_lo, sub_hi, kwargs)。
+    common = dict(
+        basement_set=basement_set, howard_mode=False,
+        howard_gaps=None, howard_last_draw=frozenset(),
+    )
     if howard_mode:
         fb_lo = fallback_s_lo if fallback_s_lo is not None else SUM_MIN
         fb_hi = fallback_s_hi if fallback_s_hi is not None else SUM_MAX
         sub_rounds = (
-            ((s_lo, s_hi), True, True),               # sub-A: Howard
-            ((fb_lo, fb_hi), True, False),            # sub-B: v6.16 dynamic
-            ((SUM_MIN, SUM_MAX), True, False),        # sub-C: v6.16 static
-            ((TICKET_SIZE * POOL_MIN, TICKET_SIZE * POOL_MAX), False, False),  # sub-D
+            (s_lo, s_hi, dict(                          # sub-A: Howard
+                apply_secondary=True, basement_set=basement_set,
+                howard_mode=True, howard_gaps=howard_gaps,
+                howard_last_draw=howard_last_draw,
+            )),
+            (fb_lo, fb_hi, dict(apply_secondary=True, **common)),      # sub-B: v6.16 dynamic
+            (SUM_MIN, SUM_MAX, dict(apply_secondary=True, **common)),  # sub-C: v6.16 static
+            (TICKET_SIZE * POOL_MIN, TICKET_SIZE * POOL_MAX,
+             dict(apply_secondary=False, **common)),                  # sub-D: sum-only
         )
     else:
         sub_rounds = (
-            ((s_lo, s_hi), True, False),
-            ((SUM_MIN, SUM_MAX), True, False),
-            ((TICKET_SIZE * POOL_MIN, TICKET_SIZE * POOL_MAX), False, False),
+            (s_lo, s_hi, dict(apply_secondary=True, **common)),
+            (SUM_MIN, SUM_MAX, dict(apply_secondary=True, **common)),
+            (TICKET_SIZE * POOL_MIN, TICKET_SIZE * POOL_MAX,
+             dict(apply_secondary=False, **common)),
         )
-    for (sub_lo, sub_hi), apply_full, use_howard in sub_rounds:
-        if len(results) >= num_tickets:
-            break
-        for combo in all_combos:
-            if len(results) >= num_tickets:
-                break
-            ticket = tuple(sorted(key_set.union(combo)))
-            if ticket in seen:
-                continue
-            if any(usage[n] >= max_per_number for n in ticket):
-                continue  # v6.15 均衡硬上限
-            if not _passes_filters(
-                ticket, sub_lo, sub_hi,
-                apply_secondary=apply_full, basement_set=basement_set,
-                howard_mode=use_howard,
-                howard_gaps=howard_gaps if use_howard else None,
-                howard_last_draw=howard_last_draw if use_howard else frozenset(),
-            ):
-                continue
-            new_pairs = set(combinations(ticket, 2))
-            if new_pairs & used_pairs:  # 嚴格 pair-disjoint: 任一共 pair 即拒
-                continue
-            results.append(ticket)
-            seen.add(ticket)
-            used_pairs |= new_pairs
-            usage.update(ticket)
-
-    return results
+    return _base_generate_batch_disjoint(
+        pool=pool, key_set=key_set, num_tickets=num_tickets, rng=rng,
+        ticket_size=TICKET_SIZE, sub_rounds=sub_rounds, passes=_passes_filters,
+    )
 
 
 # --- Core algorithm -----------------------------------------------------------
@@ -381,11 +331,7 @@ def generate_tickets(
     Raises ValueError on invalid input or unsatisfiable configuration.
     """
     _validate_history(history_draws)
-
-    if not isinstance(num_tickets, int) or isinstance(num_tickets, bool):
-        raise ValueError("num_tickets must be an integer")
-    if num_tickets < 1:
-        raise ValueError("num_tickets must be >= 1")
+    _validate_num_tickets(num_tickets)
 
     rng = rng if rng is not None else random.Random()
 
@@ -418,63 +364,22 @@ def generate_tickets(
                 "UI must force howard_mode=False"
             )
 
-    # --- Phase 2: pool + dynamic 雙膽 ---
-    if manual_excluded_tails is not None:
-        excl = _ensure_int_list("manual_excluded_tails", manual_excluded_tails)
-        _validate_range("manual_excluded_tails", excl, 0, 9)
-        _validate_unique("manual_excluded_tails", excl)
-        tail_set = set(excl)
-    else:
-        tail_set = set(analysis.exclude_tails)
-
-    pool: set[int] = {
-        n for n in range(POOL_MIN, POOL_MAX + 1) if (n % 10) not in tail_set
-    }
-
-    # Manual per-number exclusion (UI clickable grid)
-    excl_nums: list[int] = []
-    if manual_excluded_numbers is not None:
-        excl_nums = _ensure_int_list("manual_excluded_numbers", manual_excluded_numbers)
-        _validate_range("manual_excluded_numbers", excl_nums, POOL_MIN, POOL_MAX)
-        _validate_unique("manual_excluded_numbers", excl_nums)
-        pool -= set(excl_nums)
-
-    if manual_keys is not None:
-        keys = _ensure_int_list("manual_keys", manual_keys)
-        _validate_range("manual_keys", keys, POOL_MIN, POOL_MAX)
-        _validate_unique("manual_keys", keys)
-        if not (MIN_KEY_NUMS <= len(keys) <= MAX_KEY_NUMS):
-            raise ValueError(
-                f"manual_keys must contain {MIN_KEY_NUMS}-{MAX_KEY_NUMS} numbers"
-            )
-        key_set = set(keys)
-        # Manual conflict → explicit user error (UI also catches this upstream).
-        if manual_excluded_numbers is not None:
-            conflict = key_set & set(excl_nums)
-            if conflict:
-                raise ValueError(
-                    f"keys {sorted(conflict)} conflict with manual_excluded_numbers"
-                )
-    else:
-        # Auto-key path: silently drop any auto-suggested key that the user
-        # has excluded. Empty key_set is tolerated (no-膽碼 fallback mode).
-        keys = list(analysis.auto_keys)
-        if len(keys) > MAX_KEY_NUMS:
-            raise ValueError(
-                f"auto_keys yielded {len(keys)} > max {MAX_KEY_NUMS}"
-            )
-        key_set = set(keys) - set(excl_nums)
-        keys = sorted(key_set)
-
-    drag_candidates = pool - key_set
-    needed = TICKET_SIZE - len(key_set)
-    if len(drag_candidates) < needed:
-        raise ValueError(
-            f"insufficient drag candidates: need {needed}, "
-            f"available {len(drag_candidates)} (after excluding tails {sorted(tail_set)})"
-        )
+    # --- Phase 2: pool + dynamic 雙膽（委派 base_picker;SSOT v6.23 B4b）---
+    pool, key_set = _resolve_pool_and_keys(
+        analysis,
+        pool_min=POOL_MIN,
+        pool_max=POOL_MAX,
+        ticket_size=TICKET_SIZE,
+        min_key_nums=MIN_KEY_NUMS,
+        max_key_nums=MAX_KEY_NUMS,
+        manual_excluded_tails=manual_excluded_tails,
+        manual_excluded_numbers=manual_excluded_numbers,
+        manual_keys=manual_keys,
+    )
 
     # --- Phase 3: matrix shuffling ---
+    drag_candidates = pool - key_set
+    needed = TICKET_SIZE - len(key_set)
     drag_sorted = sorted(drag_candidates)
     all_combos = list(combinations(drag_sorted, needed))
     rng.shuffle(all_combos)

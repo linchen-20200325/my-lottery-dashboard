@@ -116,8 +116,15 @@ my-lottery-2026/
   - 新測試：`tests/test_review_findings.py` 14 個 cases — 3 個風險各帶 raise 路徑 + 兼容性正例
   - 驗證：144 unit tests 全綠（134 → 144，+10）；既有引擎/scraper/UI 零退化
 
-## SSOT 全域排毒重構 Phase 2 — B4a 引擎收斂(v6.23)
-- [x] **B4a:新增 `src/generator/base_engine.py`,兩引擎第一區五階段邏輯收斂為單一實作** 🚧 B4 進行中(B4a 完成,B4b 待續)
+## SSOT 全域排毒重構 Phase 2 — B4 引擎 + 選號收斂(v6.23)
+- [x] **B4b:新增 `src/generator/base_picker.py`,兩選號器 ~90% copy-paste 收斂為共用骨架** ✅ B4 完成(B4a+B4b)
+  - `base_picker.py` 吸收:3 個 validator + 池邊界參數化 `validate_history`/`validate_num_tickets`、Phase 2 `resolve_pool_and_keys`(pool+雙膽建構)、基礎 5 濾網 `passes_base_filters(cfg, extra)`、批次 pair-disjoint 骨架 `generate_batch_disjoint(sub_rounds, passes)`
+  - **DR-3 修復**:質數/大小/奇偶/連號 5 濾網單一實作於 `passes_base_filters`(原本埋在大樂透 Howard 擴充裡,改一處要改兩處);濾網常數吃 `DomainConfig`
+  - **留差異(plug-in)**:大樂透 Howard 8 條 + 字頭/谷底經 `extra` hook 注入;威力彩第二區 `_resolve_bonus` 後置;generate_tickets P1/P4/Round 編排留各 picker(Howard/bonus 在此分歧)
+  - 兩 picker 公開常數(`BIG_THRESHOLD`/`PRIMES_SET`/`DECADE_BANDS`…)與 `_passes_filters`/`ticket_stats`/`generate_tickets` 簽章全部保留(測試契約不破)
+  - golden-seed 回歸:6 seed ×(兩 picker generate_tickets + Howard 模式)逐票 byte-identical
+  - 驗證:262 tests 全綠、憲法 7/7 PASS;變更檔案:`src/generator/base_picker.py`(新)、`lotto_picker.py`/`powerball_picker.py`(薄化)、`ARCHITECTURE.md`、`STATE.md`
+- [x] **B4a:新增 `src/generator/base_engine.py`,兩引擎第一區五階段邏輯收斂為單一實作**
   - `base_engine.py` 吸收:`_gaps(lo,hi)`/`_z_layer(lo,hi)`/`_tail_counts`/`_dormant_tails`/`_auto_keys(lo,hi)`/`_dynamic_sum_range`(逐位元組相同或僅池邊界參數化)+ `validate_analyze_params`(byte-identical 驗證級聯)+ `analyze_main_zone()`(第一區 orchestration + 三鐵則斷言)
   - 兩 `*_engine.py` 薄化:`history_engine` 271 → ~140 行、`powerball_engine` 323 → ~190 行;`analyze()` 縮成「validate → analyze_main_zone → `HistoryAnalysis(**mz)` / `PowerballAnalysis(**mz, bonus…)`」
   - **dataclass 留各引擎**(CLAUDE.md §2.2/§7 紅線:純信號 + cache-key 語義);威力彩第二區 `_bonus_analyze` + bonus 斷言留 `powerball_engine`(領域差異)
