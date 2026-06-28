@@ -26,9 +26,13 @@ from collections import Counter
 from pathlib import Path
 
 from src.analytics.cost_calc import UNIT_PRICE_TWD
-from src.generator.lotto_picker import TICKET_SIZE, generate_tickets
+from src.generator.domain import DomainConfig, LOTTO649, POWERBALL
+from src.generator.lotto_picker import generate_tickets as _lotto_generate
+from src.generator.powerball_picker import generate_tickets as _pb_generate
 
-# Simplified prize table (white-ball only; ignores special-ball tiers)
+# Simplified prize table — 大樂透 white-ball only(忽略特別號分級;名目估算)。
+# v6.24 B6:威力彩第二區 + 第一區雙池獎金結構不同,**不在此捏造**名目表
+# (§1 Fail Loud / §3.3 反捏造)→ 威力彩回測只報 hit 分佈 + 成本,payout/ROI 為 None。
 PRIZE_TWD: dict[int, int] = {
     6: 100_000_000,
     5: 150_000,
@@ -37,7 +41,27 @@ PRIZE_TWD: dict[int, int] = {
 }
 
 
-def _read_csv(path: Path) -> tuple[list[list[int]], list[str]]:
+def _generate_for(
+    dom: DomainConfig,
+    history: list[list[int]],
+    num_tickets: int,
+    rng: random.Random,
+) -> list[tuple[int, ...]]:
+    """依樂透別 dispatch 至對應 picker;只取第一區 tickets(回測比對主號命中)。"""
+    if dom is POWERBALL:
+        tickets, _bonus, _ = _pb_generate(
+            history_draws=history, num_tickets=num_tickets, rng=rng,
+        )
+    else:
+        tickets, _ = _lotto_generate(
+            history_draws=history, num_tickets=num_tickets, rng=rng,
+        )
+    return tickets
+
+
+def _read_csv(
+    path: Path, dom: DomainConfig = LOTTO649
+) -> tuple[list[list[int]], list[str]]:
     """Load (nums, dates) preserving CSV order. Caller must verify newest-first."""
     out_nums: list[list[int]] = []
     out_dates: list[str] = []
@@ -45,10 +69,10 @@ def _read_csv(path: Path) -> tuple[list[list[int]], list[str]]:
         reader = csv.DictReader(fp)
         for row in reader:
             try:
-                nums = sorted(int(row[f"n{i}"]) for i in range(1, TICKET_SIZE + 1))
+                nums = sorted(int(row[f"n{i}"]) for i in range(1, dom.ticket_size + 1))
             except (KeyError, ValueError):
                 continue
-            if len(nums) == TICKET_SIZE:
+            if len(nums) == dom.ticket_size:
                 out_nums.append(nums)
                 out_dates.append(row.get("draw_date", ""))
     return out_nums, out_dates
@@ -78,8 +102,15 @@ def backtest(
     tickets_per_draw: int = 5,
     lookback: int = 30,
     seed: int = 2026,
+    dom: DomainConfig = LOTTO649,
 ) -> dict[str, object]:
-    rows, dates = _read_csv(csv_path)
+    """回測第一區命中分佈。`dom` 預設大樂透;傳 POWERBALL 跑威力彩第一區。
+
+    payout/ROI 僅在有名目獎金表時計算(目前僅大樂透);威力彩無 honest 主號
+    獎金表 → payout/net/roi 為 None(§1 不捏造),只報 hit 分佈 + 成本。
+    """
+    prize_table = PRIZE_TWD if dom is LOTTO649 else None
+    rows, dates = _read_csv(csv_path, dom)
     _assert_newest_first(dates)
     if len(rows) < lookback + 2:
         raise ValueError(
@@ -95,10 +126,8 @@ def backtest(
         target = set(rows[k])
         history = rows[k + 1 : k + 1 + lookback]
         try:
-            tickets, _ = generate_tickets(
-                history_draws=history,
-                num_tickets=tickets_per_draw,
-                rng=random.Random(rng.random()),
+            tickets = _generate_for(
+                dom, history, tickets_per_draw, random.Random(rng.random()),
             )
         except ValueError:
             continue
@@ -109,55 +138,79 @@ def backtest(
             total_tickets += 1
             hits = len(set(t) & target)
             hit_counts[hits] += 1
-            payout += PRIZE_TWD.get(hits, 0)
+            if prize_table is not None:
+                payout += prize_table.get(hits, 0)
 
     cost = total_tickets * UNIT_PRICE_TWD
-    return {
+    result: dict[str, object] = {
         "draws_evaluated": total_draws,
         "tickets_generated": total_tickets,
         "hit_distribution": dict(sorted(hit_counts.items())),
         "cost_twd": cost,
-        "payout_twd": payout,
-        "net_twd": payout - cost,
-        "roi_percent": (payout - cost) / cost * 100 if cost else 0.0,
     }
+    if prize_table is not None:
+        result["payout_twd"] = payout
+        result["net_twd"] = payout - cost
+        result["roi_percent"] = (payout - cost) / cost * 100 if cost else 0.0
+    else:
+        # 威力彩:無 honest 名目獎金表 → 不捏造 payout/ROI(§1/§3.3)
+        result["payout_twd"] = None
+        result["net_twd"] = None
+        result["roi_percent"] = None
+    return result
 
 
 def _format_report(result: dict[str, object]) -> str:
     lines = [
-        "=== Lotto 6/49 Picker Backtest (v3.0) ===",
+        "=== Picker Backtest (v3.0) ===",
         f"Draws evaluated     : {result['draws_evaluated']}",
         f"Tickets generated   : {result['tickets_generated']}",
         f"Cost (NT$)          : {result['cost_twd']:,}",
-        f"Payout (NT$, capped): {result['payout_twd']:,}",
-        f"Net (NT$)           : {result['net_twd']:,}",
-        f"ROI                 : {result['roi_percent']:.2f}%",
-        "Hit distribution    :",
     ]
+    if result["payout_twd"] is not None:
+        lines += [
+            f"Payout (NT$, capped): {result['payout_twd']:,}",
+            f"Net (NT$)           : {result['net_twd']:,}",
+            f"ROI                 : {result['roi_percent']:.2f}%",
+        ]
+    else:
+        lines.append(
+            "Payout / Net / ROI  : N/A（威力彩無 honest 名目獎金表,§1 不捏造)"
+        )
+    lines.append("Hit distribution    :")
     dist = result["hit_distribution"]
     assert isinstance(dist, dict)
     for k in sorted(dist):
         lines.append(f"  {k} hit(s): {dist[k]:>8}")
     lines.append(
         "Note: 頭獎為彩金分潤制，此處以名目上限估算；"
-        "EV<0 為大樂透數學本質，本回測僅作演算法行為審視。"
+        "EV<0 為樂透數學本質，本回測僅作演算法行為審視。"
     )
     return "\n".join(lines)
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Offline backtest for v3.0 picker")
-    ap.add_argument("--csv", type=Path, default=Path("data/lotto649.csv"))
+    ap.add_argument(
+        "--lottery", choices=["lotto649", "powerball"], default="lotto649",
+    )
+    ap.add_argument("--csv", type=Path, default=None)
     ap.add_argument("--tickets-per-draw", type=int, default=5)
     ap.add_argument("--lookback", type=int, default=30)
     ap.add_argument("--seed", type=int, default=2026)
     args = ap.parse_args()
 
+    dom = LOTTO649 if args.lottery == "lotto649" else POWERBALL
+    csv_path = args.csv or Path(
+        "data/lotto649.csv" if dom is LOTTO649 else "data/powerball.csv"
+    )
+
     result = backtest(
-        csv_path=args.csv,
+        csv_path=csv_path,
         tickets_per_draw=args.tickets_per_draw,
         lookback=args.lookback,
         seed=args.seed,
+        dom=dom,
     )
     print(_format_report(result))
 
