@@ -30,21 +30,22 @@ from src.generator.powerball_engine import (
     PowerballAnalysis,
     analyze,
 )
+from src.generator.domain import POWERBALL as _DOM
 
 SUM_MIN, SUM_MAX = STATIC_SUM_MIN, STATIC_SUM_MAX
-ALLOWED_ODD_COUNTS: frozenset = frozenset({2, 3, 4})
-BIG_THRESHOLD = 19           # 38//2 — 「大數 > 19」≥ 3 顆
-MIN_BIG_COUNT = 3
-MAX_KEY_NUMS = 5
-MIN_KEY_NUMS = 1
+# v6.22(B3+):基礎濾網/診斷常數源自 DomainConfig.POWERBALL(SSOT);ticket_stats
+# 與 _passes_filters 共用同一來源(值不變,test_domain 對帳鎖定)。
+ALLOWED_ODD_COUNTS: frozenset = _DOM.allowed_odd_counts
+BIG_THRESHOLD = _DOM.big_threshold        # 38//2 — 「大數 > 19」≥ 3 顆
+MIN_BIG_COUNT = _DOM.min_big_count
+MAX_KEY_NUMS = _DOM.max_key_nums
+MIN_KEY_NUMS = _DOM.min_key_nums
 
-# 1-38 池內質數：去掉大樂透的 41/43/47
-PRIMES_SET: frozenset = frozenset(
-    {2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37}
-)
-MIN_PRIME_COUNT = 1
-MAX_PRIME_COUNT = 3
-MAX_CONSECUTIVE_PAIRS = 2
+# 1-38 池內質數(裁掉大樂透的 41/43/47)
+PRIMES_SET: frozenset = _DOM.primes_set
+MIN_PRIME_COUNT = _DOM.min_prime_count
+MAX_PRIME_COUNT = _DOM.max_prime_count
+MAX_CONSECUTIVE_PAIRS = _DOM.max_consecutive_pairs
 
 
 # --- Validation helpers -------------------------------------------------------

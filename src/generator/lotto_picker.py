@@ -35,21 +35,23 @@ from src.generator.history_engine import (
     TICKET_SIZE,
     analyze,
 )
+from src.generator.domain import LOTTO649 as _DOM
 
 # Static fallback sum range (used when history unavailable; v5.0 §2)
 SUM_MIN, SUM_MAX = STATIC_SUM_MIN, STATIC_SUM_MAX
-ALLOWED_ODD_COUNTS: frozenset = frozenset({2, 3, 4})
-BIG_THRESHOLD = 31
-MIN_BIG_COUNT = 3
-MAX_KEY_NUMS = 5
-MIN_KEY_NUMS = 1
+# v6.22(B3+):基礎濾網/診斷常數源自 DomainConfig.LOTTO649(SSOT)。ticket_stats
+# (每注診斷)與 _passes_filters(濾網)共用同一來源,杜絕門檻漂移;值不變,
+# tests/test_domain.py 對帳鎖定 DomainConfig == 現役常數。
+ALLOWED_ODD_COUNTS: frozenset = _DOM.allowed_odd_counts
+BIG_THRESHOLD = _DOM.big_threshold
+MIN_BIG_COUNT = _DOM.min_big_count
+MAX_KEY_NUMS = _DOM.max_key_nums
+MIN_KEY_NUMS = _DOM.min_key_nums
 
-PRIMES_SET: frozenset = frozenset(
-    {2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47}
-)
-MIN_PRIME_COUNT = 1
-MAX_PRIME_COUNT = 3
-MAX_CONSECUTIVE_PAIRS = 2
+PRIMES_SET: frozenset = _DOM.primes_set
+MIN_PRIME_COUNT = _DOM.min_prime_count
+MAX_PRIME_COUNT = _DOM.max_prime_count
+MAX_CONSECUTIVE_PAIRS = _DOM.max_consecutive_pairs
 
 # v6.16 Howard #4 字頭追蹤(Decade Tracking)
 # Source: Gail Howard, "Lottery Master Guide"
