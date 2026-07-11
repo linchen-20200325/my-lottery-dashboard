@@ -385,19 +385,19 @@ def render(sample_csv_path: Path) -> None:
                 "注數",
                 options=[1, 3, 5, 8, 10],
                 selection_mode="single",
-                default=5,
+                default=10,
                 key="pb_num_pills",
             )
-            num_tickets = int(_pb_num_choice) if _pb_num_choice else 5
+            num_tickets = int(_pb_num_choice) if _pb_num_choice else 10
         else:
-            num_tickets = st.slider("注數", 1, 10, 5, key="pb_num")
+            num_tickets = st.slider("注數", 1, 10, 10, key="pb_num")
         seed_input = st.number_input(
             "隨機種子 (0 = 真隨機)", min_value=0, value=0, step=1, key="pb_seed",
         )
 
         batch_disjoint = st.checkbox(
             "🧩 批次推薦：注間號碼完全不重複",
-            value=False,
+            value=True,
             help="開啟後各注 6 顆號碼完全不重疊（會停用膽碼），用於提高批次覆蓋率。",
             key="pb_batch_disjoint",
         )
