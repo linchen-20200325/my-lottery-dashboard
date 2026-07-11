@@ -45,7 +45,7 @@ my-lottery-dashboard/
 │   │   └── freshness.py          #   開獎日截止線 + CSV 落後偵測
 │   ├── analytics/                # ── 離線分析(主要 CLI;cost_calc 例外可上線)
 │   │   ├── cost_calc.py          #   包牌成本 comb(drag, 6-key) × NT$50
-│   │   ├── backtest.py           #   歷史命中率回測 + ROI(吃 DomainConfig + 幾組/不重複/霍華德/期數;威力彩 payout=None §1)
+│   │   ├── backtest.py           #   歷史命中率回測 + ROI(吃 DomainConfig + 幾組/不重複/霍華德/期數/手動覆寫;威力彩 payout=None §1)
 │   │   └── metrics.py            #   compression/survival + MC 對帳(吃 DomainConfig;濾網委派 base_picker)
 │   └── scraper/                  # ── 離線抓檔(僅 GitHub Actions / 本機,Cloud 不跑)
 │       ├── lotto649_downloader.py#   直打台彩 Lotto649Result API + retry + 增量合併
