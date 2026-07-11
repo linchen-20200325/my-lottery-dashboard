@@ -121,6 +121,9 @@ my-lottery-2026/
 - [x] **Part 1 `analytics/backtest.py` 擴充 + `test_backtest.py`**:`backtest()` 加 `batch_disjoint` / `howard_mode`(僅大樂透) / `max_periods`(限最近 N 期) / `signal_params`(透傳訊號參數)參數;`_generate_for` dispatch 透傳選項;新增「每期最佳一注命中分佈」(`draws_hit_distribution`)+ `periods_requested`;CLI 加 `--max-periods/--batch-disjoint/--howard`。lookahead 護網不變(`_assert_newest_first` + `rows[k+1:]`);威力彩仍 payout=None(§1)。test_backtest 4→8 測試、憲法 7/7。
 - [x] **Part 2 `ui/_widgets.py` + 兩 view**:`_widgets.backtest_panel`(SSOT 共用面板:幾組/不重複/霍華德(僅大樂透)/期數 5-100/lookback + 執行鈕 + 結果渲染)+ **`run_backtest_cached`(單一 cached 執行,以樂透別 str 當 key 解析 dom;兩 view 共用,消除各自 `_bt_run` 重複 → SSOT)**;兩 view 主面板加 always-on「🔮 回測」expander(獨立於產生鈕),綁定當前訊號參數 + 樂透別。結果顯示每期最佳命中 / ≥3 命中率 / 每注命中分佈 /(大樂透)名目 ROI + 免責。ui_smoke 執行 stub 實跑 render(含真的跑回測)無錯、widget key 不衝突;286 tests、憲法 7/7、golden MATCH。
 
+## 面板預設調整(v6.25.3)
+- [x] **兩 view 主選號面板預設改「號碼完全不重複(batch_disjoint)ON + 注數 10」**:依使用者「追常中小獎」需求 —— 5 注攤開覆蓋更多號碼 → 每期至少一注中 ≥3 的機率提高(包牌/wheeling 原理,非預測,EV 仍 <0)。回測面板預設不動。ui_smoke 實跑新預設 render OK。
+
 ## 回測 — 可選套用手動膽碼/排除(v6.25.2)
 - [x] **`backtest.py` + `_widgets.py` + 兩 view + `test_backtest.py`**:使用者要「上方參數也加進回測」。釐清:SMA/尾數/動態膽碼排除**本來就在**回測裡(每期用當前訊號參數重算);新增**開關「套用目前的手動膽碼/排除」**(預設不勾=乾淨回測)。勾了 → `backtest()` 把 `manual_keys`/`manual_excluded_tails`/`manual_excluded_numbers` 透傳選號器套到每一期。SSOT:面板/cached 執行仍單一份(`run_backtest_cached` 加 `apply_manual` + 3 手動 tuple 參數)。註:排除是硬約束(絕不出現)、手動膽碼是軟偏好(Round 1;Round 2 fallback 可能不含,與 live app 同語義)。test_backtest +1(排除硬約束驗證);ui_smoke 實跑含 toggle OK。
 

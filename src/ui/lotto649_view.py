@@ -397,16 +397,16 @@ def render(sample_csv_path: Path) -> None:
                 "注數",
                 options=[1, 5, 10, 15, 20, 30, 50],
                 selection_mode="single",
-                default=5,
+                default=10,
                 key="l649_num_pills",
             )
-            num_tickets = int(_num_choice) if _num_choice else 5
+            num_tickets = int(_num_choice) if _num_choice else 10
         else:
-            num_tickets = st.slider("注數", 1, 50, 5, key="l649_num")
+            num_tickets = st.slider("注數", 1, 50, 10, key="l649_num")
 
         batch_disjoint = st.checkbox(
             "🧩 批次推薦：注間號碼完全不重複",
-            value=False,
+            value=True,
             help=(
                 "開啟後，各注 6 顆號碼完全不重合（會停用膽碼），"
                 "可大幅提高批次覆蓋率。"
