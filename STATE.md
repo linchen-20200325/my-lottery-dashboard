@@ -116,6 +116,11 @@ my-lottery-2026/
   - 新測試：`tests/test_review_findings.py` 14 個 cases — 3 個風險各帶 raise 路徑 + 兼容性正例
   - 驗證：144 unit tests 全綠（134 → 144，+10）；既有引擎/scraper/UI 零退化
 
+## 互動式回測功能(v6.25,進行中)
+> 使用者需求:「按現在的建議號碼、每期重選、可選幾組 / 號碼完全不重複 / 霍華德嚴格 / 回測幾期」。§7 對齊:乾淨策略回測(用當前訊號參數,不套手動膽碼/排除);霍華德僅大樂透。
+- [x] **Part 1 `analytics/backtest.py` 擴充 + `test_backtest.py`**:`backtest()` 加 `batch_disjoint` / `howard_mode`(僅大樂透) / `max_periods`(限最近 N 期) / `signal_params`(透傳訊號參數)參數;`_generate_for` dispatch 透傳選項;新增「每期最佳一注命中分佈」(`draws_hit_distribution`)+ `periods_requested`;CLI 加 `--max-periods/--batch-disjoint/--howard`。lookahead 護網不變(`_assert_newest_first` + `rows[k+1:]`);威力彩仍 payout=None(§1)。test_backtest 4→8 測試、憲法 7/7。
+- [ ] **Part 2**:兩 view 主面板加「🔮 回測」expander(幾組/不重複/霍華德(大樂透)/期數/lookback + 執行按鈕 + `@st.cache_data`),結果顯示 hit 分佈 + 命中率 +(大樂透)名目 ROI;擴充 test_ui_smoke。
+
 ## 深層拔毒 Phase 3 — domain.py 升真 SSOT + 死碼清除(v6.24,進行中)
 > 依《深層毒素稽核報告》同意藍圖:T1(domain 真 SSOT)→ T4(小修/死碼)→ T2(B5 UI)→ T3(B6)。一次一檔、golden 守、per-file commit。
 - [x] **T1-a `history_engine.py`**:刪自刻 `POOL/DEFAULTS/STATIC_SUM`(1,49 / DEFAULTS dict / 120,180)→ import `domain.LOTTO649`;消費端名稱不變、值由 test_domain 對帳;golden 全 seed MATCH、43 測試綠。解 S1 影子 SSOT(大樂透側)。
