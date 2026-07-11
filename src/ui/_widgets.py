@@ -178,9 +178,10 @@ def backtest_panel(*, key_prefix: str, show_howard: bool, run) -> None:
     `show_howard`:是否顯示霍華德嚴格 toggle(僅大樂透)。
     """
     st.caption(
-        "用倉庫內附歷史 + 你**當前的訊號參數**,每一期只用當時可得資料重選號,"
-        "比對該期實際開獎。**不套手動膽碼/排除**(乾淨策略回測)。"
-        "EV<0 為樂透數學本質,本回測僅審視策略行為。"
+        "**每一期都重新選號(不是固定一組)**:回到每次開獎前,只用當時可得的歷史"
+        "(往前 lookback 期)算訊號、用你**當前的訊號參數**重新選出號碼,再跟該期"
+        "**實際開獎**對獎;一路做 N 期 = 選了 N 次號。**不套手動膽碼/排除**(乾淨"
+        "策略回測)。EV<0 為樂透數學本質,回測僅審視策略行為、非預測。"
     )
     if hasattr(st, "pills"):
         _n = st.pills(
@@ -213,6 +214,9 @@ def backtest_panel(*, key_prefix: str, show_howard: bool, run) -> None:
     seed = int(st.number_input(
         "隨機種子(同 seed 同結果)", min_value=0, value=2026, step=1,
         key=f"{key_prefix}_bt_seed",
+        help="選號有隨機性(從候選號池洗牌抽組)。固定同一個 seed → 每次跑結果完全"
+             "一樣,方便『只改一個選項』做公平比較;換一個 seed = 重擲一次骰子,多換"
+             "幾個 seed 若結論都差不多,代表策略不是靠運氣。不影響策略本身,只固定隨機。",
     ))
 
     if not st.button(
@@ -246,6 +250,21 @@ def _render_backtest_result(result: dict) -> None:
     cols[1].metric("產生注數", f"{tickets:,}")
     if result["payout_twd"] is not None:
         cols[2].metric("名目 ROI", f"{result['roi_percent']:.1f}%")
+
+    # 範例:秀最新一期「當時實際選出的注」→ 眼見每期都是重新選號、不是固定一組
+    sample = result.get("sample")
+    if sample:
+        st.markdown(
+            f"**範例 — 最新一期({sample['date'] or '最近期'})當時實際選出的注**"
+            "(每期都像這樣重新選,不是固定同一組):"
+        )
+        st.caption(
+            "該期實際開獎:`"
+            + " ".join(f"{n:02d}" for n in sample["target"]) + "`"
+        )
+        for t, h in zip(sample["tickets"], sample["hits"]):
+            nums = " ".join(f"{n:02d}" for n in t)
+            st.markdown(f"- `{nums}` — 命中 **{h}** 顆")
 
     ddist = result["draws_hit_distribution"]
     hit3 = sum(v for k, v in ddist.items() if k >= 3)

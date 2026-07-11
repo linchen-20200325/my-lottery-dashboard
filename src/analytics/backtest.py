@@ -151,6 +151,7 @@ def backtest(
     total_tickets = 0
     total_draws = 0
     payout = 0
+    sample: dict | None = None                # 第一個評估期(最新期)的實選注範例
 
     for k in range(n_eval):
         target = set(rows[k])
@@ -175,6 +176,14 @@ def backtest(
             if prize_table is not None:
                 payout += prize_table.get(hits, 0)
         draws_best[best] += 1
+        if sample is None:
+            # 秀最新一個評估期「當時實際選出的注」— 讓使用者眼見每期都重選號
+            sample = {
+                "date": dates[k] if k < len(dates) else "",
+                "target": sorted(rows[k]),
+                "tickets": [sorted(t) for t in tickets[:5]],
+                "hits": [len(set(t) & target) for t in tickets[:5]],
+            }
 
     cost = total_tickets * UNIT_PRICE_TWD
     result: dict[str, object] = {
@@ -184,6 +193,7 @@ def backtest(
         "hit_distribution": dict(sorted(hit_counts.items())),
         "draws_hit_distribution": dict(sorted(draws_best.items())),
         "cost_twd": cost,
+        "sample": sample,
     }
     if prize_table is not None:
         result["payout_twd"] = payout
