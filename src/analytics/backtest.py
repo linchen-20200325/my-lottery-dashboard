@@ -50,24 +50,35 @@ def _generate_for(
     batch_disjoint: bool = False,
     howard_mode: bool = False,
     signal_params: dict | None = None,
+    manual_keys=None,
+    manual_excluded_tails=None,
+    manual_excluded_numbers=None,
 ) -> list[tuple[int, ...]]:
     """依樂透別 dispatch 至對應 picker;只取第一區 tickets(回測比對主號命中)。
 
     `batch_disjoint`:組與組之間 6 號完全不重複。
     `howard_mode`:霍華德嚴格模式(**僅大樂透**;威力彩無此策略,忽略)。
     `signal_params`:訊號參數 dict(hot_sigma_factor / sum_sma_window / … ),透傳
-        `generate_tickets`;None → 引擎預設。**不含手動膽碼/排除**(乾淨策略回測)。
+        `generate_tickets`;None → 引擎預設。
+    `manual_keys` / `manual_excluded_tails` / `manual_excluded_numbers`:手動覆寫。
+        None = 乾淨策略回測(用當期動態訊號);非 None = 套用到每一期(§7 使用者可選)。
     """
     sp = signal_params or {}
     if dom is POWERBALL:
         tickets, _bonus, _ = _pb_generate(
             history_draws=history, num_tickets=num_tickets, rng=rng,
-            batch_disjoint=batch_disjoint, **sp,
+            batch_disjoint=batch_disjoint,
+            manual_keys=manual_keys,
+            manual_excluded_tails=manual_excluded_tails,
+            manual_excluded_numbers=manual_excluded_numbers, **sp,
         )
     else:
         tickets, _ = _lotto_generate(
             history_draws=history, num_tickets=num_tickets, rng=rng,
-            batch_disjoint=batch_disjoint, howard_mode=howard_mode, **sp,
+            batch_disjoint=batch_disjoint, howard_mode=howard_mode,
+            manual_keys=manual_keys,
+            manual_excluded_tails=manual_excluded_tails,
+            manual_excluded_numbers=manual_excluded_numbers, **sp,
         )
     return tickets
 
@@ -121,6 +132,9 @@ def backtest(
     howard_mode: bool = False,
     max_periods: int | None = None,
     signal_params: dict | None = None,
+    manual_keys=None,
+    manual_excluded_tails=None,
+    manual_excluded_numbers=None,
 ) -> dict[str, object]:
     """回測第一區命中分佈。`dom` 預設大樂透;傳 POWERBALL 跑威力彩第一區。
 
@@ -161,6 +175,9 @@ def backtest(
                 dom, history, tickets_per_draw, random.Random(rng.random()),
                 batch_disjoint=batch_disjoint, howard_mode=howard_mode,
                 signal_params=signal_params,
+                manual_keys=manual_keys,
+                manual_excluded_tails=manual_excluded_tails,
+                manual_excluded_numbers=manual_excluded_numbers,
             )
         except ValueError:
             continue

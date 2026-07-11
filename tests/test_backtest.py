@@ -116,6 +116,24 @@ class TestBacktestOptions(unittest.TestCase):
         finally:
             p.unlink()
 
+    def test_manual_overrides_threaded(self):
+        # 手動覆寫有透傳到選號器。排除號碼是**硬約束**(從不出現)→ 可靠驗證;
+        # 手動膽碼是軟偏好(Round 1;Round 2 disjoint fallback 可能不含,與 live
+        # app 同語義),不當每注不變量斷言。
+        p = _make_csv(LOTTO649, n=60)
+        try:
+            r = backtest(
+                p, tickets_per_draw=3, lookback=20, seed=1, dom=LOTTO649,
+                max_periods=8, manual_keys=[7, 17], manual_excluded_numbers=[3, 5],
+            )
+            self.assertGreater(r["tickets_generated"], 0)
+            # 硬約束:排除的號碼在任何一注都不出現(整個 sample 各注驗證)
+            for t in r["sample"]["tickets"]:
+                self.assertNotIn(3, t)
+                self.assertNotIn(5, t)
+        finally:
+            p.unlink()
+
     def test_powerball_ignores_howard_no_crash(self):
         p = _make_csv(POWERBALL, n=50)
         try:

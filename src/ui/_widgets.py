@@ -143,12 +143,17 @@ def run_backtest_cached(
     overheat_min: int,
     dormant_periods: int,
     seed: int,
+    apply_manual: bool = False,
+    manual_keys: tuple | None = None,
+    manual_excluded_tails: tuple | None = None,
+    manual_excluded_numbers: tuple | None = None,
 ) -> dict:
     """兩 view 共用的 cached 回測執行(SSOT)。
 
-    以 `lottery`(str)當快取 key 解析 `dom`(避免對 DomainConfig 物件雜湊);
-    純 scalar 參數 → 可 cache;lazy import `backtest` 避免 streamlit_app 模組
-    載入時就拉進離線分析層。`signal_params` 不含手動膽碼/排除(乾淨策略回測)。
+    以 `lottery`(str)當快取 key 解析 `dom`;scalar/tuple 參數 → 可 cache;lazy
+    import `backtest` 避免 streamlit_app 載入時拉進離線分析層。
+    `apply_manual=False` → 乾淨策略回測(僅動態訊號);`apply_manual=True` → 手動
+    膽碼 / 排除尾數 / 排除特定號碼 也套進每一期(§7 使用者可選)。
     """
     from pathlib import Path as _Path
 
@@ -162,11 +167,18 @@ def run_backtest_cached(
         "overheat_recent_periods": overheat_recent,
         "overheat_min_count": overheat_min, "dormant_periods": dormant_periods,
     }
+
+    def _manual(v):
+        return list(v) if (apply_manual and v) else None
+
     return backtest(
         _Path(csv_str), tickets_per_draw=num_tickets, lookback=lookback,
         seed=seed, dom=dom, batch_disjoint=batch_disjoint,
         howard_mode=howard_mode, max_periods=max_periods,
         signal_params=signal_params,
+        manual_keys=_manual(manual_keys),
+        manual_excluded_tails=_manual(manual_excluded_tails),
+        manual_excluded_numbers=_manual(manual_excluded_numbers),
     )
 
 
@@ -180,8 +192,9 @@ def backtest_panel(*, key_prefix: str, show_howard: bool, run) -> None:
     st.caption(
         "**每一期都重新選號(不是固定一組)**:回到每次開獎前,只用當時可得的歷史"
         "(往前 lookback 期)算訊號、用你**當前的訊號參數**重新選出號碼,再跟該期"
-        "**實際開獎**對獎;一路做 N 期 = 選了 N 次號。**不套手動膽碼/排除**(乾淨"
-        "策略回測)。EV<0 為樂透數學本質,回測僅審視策略行為、非預測。"
+        "**實際開獎**對獎;一路做 N 期 = 選了 N 次號。預設**不套手動膽碼/排除**"
+        "(乾淨策略回測),可勾下方「套用手動」把你目前畫面的手動設定也套進每一期。"
+        "EV<0 為樂透數學本質,回測僅審視策略行為、非預測。"
     )
     if hasattr(st, "pills"):
         _n = st.pills(
@@ -211,6 +224,12 @@ def backtest_panel(*, key_prefix: str, show_howard: bool, run) -> None:
             "🎯 霍華德嚴格模式", value=False, key=f"{key_prefix}_bt_howard",
             help="霍華德黃金 8 條硬綁 + 軟分;史料不足的期會自動跳過。",
         )
+    apply_manual = st.checkbox(
+        "套用目前的手動膽碼 / 排除(否則乾淨策略回測)", value=False,
+        key=f"{key_prefix}_bt_apply_manual",
+        help="勾 = 把你上方設的手動膽碼 / 手動排除尾數 / 排除特定號碼也套到回測每一期"
+             "(完全照現在畫面跑)。不勾 = 只用動態訊號,不受一次性人工選擇影響。",
+    )
     seed = int(st.number_input(
         "隨機種子(同 seed 同結果)", min_value=0, value=2026, step=1,
         key=f"{key_prefix}_bt_seed",
@@ -228,6 +247,7 @@ def backtest_panel(*, key_prefix: str, show_howard: bool, run) -> None:
     controls = dict(
         num_tickets=num_tickets, max_periods=max_periods, lookback=lookback,
         batch_disjoint=batch_disjoint, howard_mode=howard_mode, seed=seed,
+        apply_manual=apply_manual,
     )
     try:
         result = run(controls)

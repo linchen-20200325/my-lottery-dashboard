@@ -619,6 +619,10 @@ def render(sample_csv_path: Path) -> None:
                 c["max_periods"], c["lookback"], c["batch_disjoint"],
                 c["howard_mode"], hot_sigma, cold_sigma, sma_window, range_pad,
                 overheat_recent, overheat_min, dormant_periods, c["seed"],
+                c["apply_manual"],
+                tuple(manual_keys) if manual_keys else None,
+                tuple(manual_excluded_tails) if manual_excluded_tails else None,
+                tuple(manual_excluded_numbers) if manual_excluded_numbers else None,
             ),
         )
 
