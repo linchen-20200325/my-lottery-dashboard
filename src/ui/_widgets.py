@@ -199,12 +199,12 @@ def backtest_panel(*, key_prefix: str, show_howard: bool, run) -> None:
     if hasattr(st, "pills"):
         _n = st.pills(
             "每期幾組(注數)", options=[1, 3, 5, 10, 15, 20],
-            selection_mode="single", default=5, key=f"{key_prefix}_bt_num",
+            selection_mode="single", default=10, key=f"{key_prefix}_bt_num",
         )
-        num_tickets = int(_n) if _n else 5
+        num_tickets = int(_n) if _n else 10
     else:
         num_tickets = st.slider(
-            "每期幾組(注數)", 1, 20, 5, key=f"{key_prefix}_bt_num_s",
+            "每期幾組(注數)", 1, 20, 10, key=f"{key_prefix}_bt_num_s",
         )
     max_periods = st.slider(
         "回測期數(最近 N 期)", 5, 100, 30, key=f"{key_prefix}_bt_periods",
