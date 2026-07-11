@@ -12,7 +12,13 @@ from src.ui._view_base import (
     freshness_warning,
     upload_provenance,
 )
-from src.ui._widgets import sma_section, tail_signal_sliders, zscore_sliders
+from src.ui._widgets import (
+    backtest_panel,
+    run_backtest_cached,
+    sma_section,
+    tail_signal_sliders,
+    zscore_sliders,
+)
 from src.analytics.cost_calc import UNIT_PRICE_TWD, summary as cost_summary
 from src.data.freshness import LOTTO649_DRAW_WEEKDAYS
 from src.data.loader import (
@@ -603,6 +609,18 @@ def render(sample_csv_path: Path) -> None:
         st.info("📋 預覽待命中 — 上傳或貼上資料後即可預覽近期開獎。")
 
     st.divider()
+
+    # --- 🔮 回測(v6.25;always-on,獨立於「產生選號」按鈕)---
+    with st.expander("🔮 回測(依現在策略每期重選,比對歷史開獎)", expanded=False):
+        backtest_panel(
+            key_prefix="l649", show_howard=True,
+            run=lambda c: run_backtest_cached(
+                str(sample_csv_path), "lotto649", c["num_tickets"],
+                c["max_periods"], c["lookback"], c["batch_disjoint"],
+                c["howard_mode"], hot_sigma, cold_sigma, sma_window, range_pad,
+                overheat_recent, overheat_min, dormant_periods, c["seed"],
+            ),
+        )
 
     if not go:
         st.info("⬆️ 展開上方「參數設定」調整後按『產生大樂透選號』。預設使用倉庫內附歷史資料。")

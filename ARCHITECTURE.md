@@ -25,7 +25,7 @@ my-lottery-dashboard/
 ├── src/
 │   ├── ui/                       # ── 表現層(Streamlit widget + 容錯渲染)
 │   │   ├── _view_base.py         #   ★SSOT 純 helper(expand_tails/freshness/provenance/rng;無 streamlit)
-│   │   ├── _widgets.py           #   ★SSOT 無狀態設定 widget 區段(zscore/sma/tail,key_prefix 參數化)
+│   │   ├── _widgets.py           #   ★SSOT 設定 widget 區段(zscore/sma/tail)+ 🔮 回測面板 + run_backtest_cached
 │   │   ├── lotto649_view.py      #   大樂透分頁薄殼(Howard + 精簡包牌;委派 _view_base/_widgets)
 │   │   └── powerball_view.py     #   威力彩分頁薄殼(第二區 bonus;委派 _view_base/_widgets)
 │   ├── generator/                # ── 訊號 + 選號核心(stdlib-only)
@@ -45,7 +45,7 @@ my-lottery-dashboard/
 │   │   └── freshness.py          #   開獎日截止線 + CSV 落後偵測
 │   ├── analytics/                # ── 離線分析(主要 CLI;cost_calc 例外可上線)
 │   │   ├── cost_calc.py          #   包牌成本 comb(drag, 6-key) × NT$50
-│   │   ├── backtest.py           #   歷史命中率回測 + ROI(吃 DomainConfig;威力彩 payout=None §1 不捏造)
+│   │   ├── backtest.py           #   歷史命中率回測 + ROI(吃 DomainConfig + 幾組/不重複/霍華德/期數;威力彩 payout=None §1)
 │   │   └── metrics.py            #   compression/survival + MC 對帳(吃 DomainConfig;濾網委派 base_picker)
 │   └── scraper/                  # ── 離線抓檔(僅 GitHub Actions / 本機,Cloud 不跑)
 │       ├── lotto649_downloader.py#   直打台彩 Lotto649Result API + retry + 增量合併

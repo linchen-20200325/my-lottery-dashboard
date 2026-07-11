@@ -12,7 +12,13 @@ from src.ui._view_base import (
     freshness_warning,
     upload_provenance,
 )
-from src.ui._widgets import sma_section, tail_signal_sliders, zscore_sliders
+from src.ui._widgets import (
+    backtest_panel,
+    run_backtest_cached,
+    sma_section,
+    tail_signal_sliders,
+    zscore_sliders,
+)
 from src.data.freshness import POWERBALL_DRAW_WEEKDAYS
 from src.data.loader_powerball import (
     PowerballLoadError,
@@ -571,6 +577,18 @@ def render(sample_csv_path: Path) -> None:
     )
 
     st.divider()
+
+    # --- 🔮 回測(v6.25;always-on,獨立於「產生選號」按鈕;威力彩無霍華德)---
+    with st.expander("🔮 回測(依現在策略每期重選,比對歷史開獎)", expanded=False):
+        backtest_panel(
+            key_prefix="pb", show_howard=False,
+            run=lambda c: run_backtest_cached(
+                str(sample_csv_path), "powerball", c["num_tickets"],
+                c["max_periods"], c["lookback"], c["batch_disjoint"],
+                c["howard_mode"], hot_sigma, cold_sigma, sma_window, range_pad,
+                overheat_recent, overheat_min, dormant_periods, c["seed"],
+            ),
+        )
 
     if not go:
         st.info("⬆️ 展開上方「參數設定」調整後按『產生威力彩選號』。預設使用倉庫內附歷史資料。")

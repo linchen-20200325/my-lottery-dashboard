@@ -58,6 +58,59 @@ class TestBacktestPowerball(unittest.TestCase):
             p.unlink()
 
 
+class TestBacktestOptions(unittest.TestCase):
+    """v6.25 — 回測選項:幾組 / 不重複 / 霍華德 / 幾期。"""
+
+    def test_max_periods_limits_window(self):
+        p = _make_csv(LOTTO649, n=60)
+        try:
+            r = backtest(p, lookback=20, seed=1, dom=LOTTO649, max_periods=8)
+            self.assertEqual(r["periods_requested"], 8)
+            self.assertLessEqual(r["draws_evaluated"], 8)
+            # 不限 → 全部可評估期 = 60-20-1
+            r_all = backtest(p, lookback=20, seed=1, dom=LOTTO649)
+            self.assertEqual(r_all["periods_requested"], 39)
+        finally:
+            p.unlink()
+
+    def test_max_periods_zero_raises(self):
+        p = _make_csv(LOTTO649, n=40)
+        try:
+            with self.assertRaises(ValueError):
+                backtest(p, dom=LOTTO649, max_periods=0)
+        finally:
+            p.unlink()
+
+    def test_options_and_per_draw_distribution(self):
+        p = _make_csv(LOTTO649, n=60)
+        sp = {"hot_sigma_factor": 0.5, "sum_sma_window": 10, "sum_range_pad": 30}
+        try:
+            r = backtest(
+                p, tickets_per_draw=4, lookback=20, seed=1, dom=LOTTO649,
+                batch_disjoint=True, howard_mode=True, max_periods=10,
+                signal_params=sp,
+            )
+            self.assertGreater(r["tickets_generated"], 0)
+            # 每期最佳命中分佈:各期數加總 ≤ 已評估期數
+            ddist = r["draws_hit_distribution"]
+            self.assertIsInstance(ddist, dict)
+            self.assertLessEqual(sum(ddist.values()), r["draws_evaluated"])
+        finally:
+            p.unlink()
+
+    def test_powerball_ignores_howard_no_crash(self):
+        p = _make_csv(POWERBALL, n=50)
+        try:
+            r = backtest(
+                p, tickets_per_draw=3, lookback=20, seed=1, dom=POWERBALL,
+                batch_disjoint=True, howard_mode=True, max_periods=8,
+            )
+            self.assertGreater(r["tickets_generated"], 0)
+            self.assertIsNone(r["payout_twd"])  # 威力彩仍不捏造 payout
+        finally:
+            p.unlink()
+
+
 class TestNewestFirstGuard(unittest.TestCase):
     def test_oldest_first_raises(self):
         # lookahead 護網:oldest-first 應 raise
