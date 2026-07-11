@@ -12,7 +12,12 @@ from src.ui._view_base import (
     freshness_warning,
     upload_provenance,
 )
-from src.ui._widgets import sma_section, tail_signal_sliders, zscore_sliders
+from src.ui._widgets import (
+    backtest_panel,
+    sma_section,
+    tail_signal_sliders,
+    zscore_sliders,
+)
 from src.analytics.cost_calc import UNIT_PRICE_TWD, summary as cost_summary
 from src.data.freshness import LOTTO649_DRAW_WEEKDAYS
 from src.data.loader import (
@@ -132,6 +137,30 @@ def cached_analysis(
         overheat_min_count=overheat_min,
         dormant_periods=dormant_periods,
         rng=rng,
+    )
+
+
+@st.cache_data(ttl=3600, show_spinner="🔮 回測中…")
+def _bt_run(
+    csv_str: str, num_tickets: int, max_periods: int, lookback: int,
+    batch_disjoint: bool, howard_mode: bool,
+    hot_sigma: float, cold_sigma: float, sma_window: int, range_pad: int,
+    overheat_recent: int, overheat_min: int, dormant_periods: int, seed: int,
+) -> dict:
+    """回測 cached 執行(大樂透)。純 scalar 參數 → 可 cache;lazy import 避免
+    streamlit_app 模組載入時就拉進離線 backtest。"""
+    from src.analytics.backtest import backtest
+    from src.generator.domain import LOTTO649
+    sp = {
+        "hot_sigma_factor": hot_sigma, "cold_sigma_factor": cold_sigma,
+        "sum_sma_window": sma_window, "sum_range_pad": range_pad,
+        "overheat_recent_periods": overheat_recent,
+        "overheat_min_count": overheat_min, "dormant_periods": dormant_periods,
+    }
+    return backtest(
+        Path(csv_str), tickets_per_draw=num_tickets, lookback=lookback,
+        seed=seed, dom=LOTTO649, batch_disjoint=batch_disjoint,
+        howard_mode=howard_mode, max_periods=max_periods, signal_params=sp,
     )
 
 
@@ -603,6 +632,18 @@ def render(sample_csv_path: Path) -> None:
         st.info("📋 預覽待命中 — 上傳或貼上資料後即可預覽近期開獎。")
 
     st.divider()
+
+    # --- 🔮 回測(v6.25;always-on,獨立於「產生選號」按鈕)---
+    with st.expander("🔮 回測(依現在策略每期重選,比對歷史開獎)", expanded=False):
+        backtest_panel(
+            key_prefix="l649", show_howard=True,
+            run=lambda c: _bt_run(
+                str(sample_csv_path), c["num_tickets"], c["max_periods"],
+                c["lookback"], c["batch_disjoint"], c["howard_mode"],
+                hot_sigma, cold_sigma, sma_window, range_pad,
+                overheat_recent, overheat_min, dormant_periods, c["seed"],
+            ),
+        )
 
     if not go:
         st.info("⬆️ 展開上方「參數設定」調整後按『產生大樂透選號』。預設使用倉庫內附歷史資料。")
