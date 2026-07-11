@@ -126,6 +126,50 @@ def tail_signal_sliders(key_prefix: str, defaults: dict) -> tuple[int, int, int]
 # --- 回測面板(v6.25;兩 view 共用,SSOT)--------------------------------------
 
 
+@st.cache_data(ttl=3600, show_spinner="🔮 回測中…")
+def run_backtest_cached(
+    csv_str: str,
+    lottery: str,
+    num_tickets: int,
+    max_periods: int,
+    lookback: int,
+    batch_disjoint: bool,
+    howard_mode: bool,
+    hot_sigma: float,
+    cold_sigma: float,
+    sma_window: int,
+    range_pad: int,
+    overheat_recent: int,
+    overheat_min: int,
+    dormant_periods: int,
+    seed: int,
+) -> dict:
+    """兩 view 共用的 cached 回測執行(SSOT)。
+
+    以 `lottery`(str)當快取 key 解析 `dom`(避免對 DomainConfig 物件雜湊);
+    純 scalar 參數 → 可 cache;lazy import `backtest` 避免 streamlit_app 模組
+    載入時就拉進離線分析層。`signal_params` 不含手動膽碼/排除(乾淨策略回測)。
+    """
+    from pathlib import Path as _Path
+
+    from src.analytics.backtest import backtest
+    from src.generator.domain import LOTTO649, POWERBALL
+
+    dom = LOTTO649 if lottery == "lotto649" else POWERBALL
+    signal_params = {
+        "hot_sigma_factor": hot_sigma, "cold_sigma_factor": cold_sigma,
+        "sum_sma_window": sma_window, "sum_range_pad": range_pad,
+        "overheat_recent_periods": overheat_recent,
+        "overheat_min_count": overheat_min, "dormant_periods": dormant_periods,
+    }
+    return backtest(
+        _Path(csv_str), tickets_per_draw=num_tickets, lookback=lookback,
+        seed=seed, dom=dom, batch_disjoint=batch_disjoint,
+        howard_mode=howard_mode, max_periods=max_periods,
+        signal_params=signal_params,
+    )
+
+
 def backtest_panel(*, key_prefix: str, show_howard: bool, run) -> None:
     """渲染「🔮 回測」控制項 + 結果。
 

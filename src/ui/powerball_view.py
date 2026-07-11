@@ -14,6 +14,7 @@ from src.ui._view_base import (
 )
 from src.ui._widgets import (
     backtest_panel,
+    run_backtest_cached,
     sma_section,
     tail_signal_sliders,
     zscore_sliders,
@@ -119,29 +120,6 @@ def cached_analysis(
         overheat_min_count=overheat_min,
         dormant_periods=dormant_periods,
         rng=rng,
-    )
-
-
-@st.cache_data(ttl=3600, show_spinner="🔮 回測中…")
-def _bt_run(
-    csv_str: str, num_tickets: int, max_periods: int, lookback: int,
-    batch_disjoint: bool, howard_mode: bool,
-    hot_sigma: float, cold_sigma: float, sma_window: int, range_pad: int,
-    overheat_recent: int, overheat_min: int, dormant_periods: int, seed: int,
-) -> dict:
-    """回測 cached 執行(威力彩第一區;howard_mode 被 backtest 忽略)。"""
-    from src.analytics.backtest import backtest
-    from src.generator.domain import POWERBALL
-    sp = {
-        "hot_sigma_factor": hot_sigma, "cold_sigma_factor": cold_sigma,
-        "sum_sma_window": sma_window, "sum_range_pad": range_pad,
-        "overheat_recent_periods": overheat_recent,
-        "overheat_min_count": overheat_min, "dormant_periods": dormant_periods,
-    }
-    return backtest(
-        Path(csv_str), tickets_per_draw=num_tickets, lookback=lookback,
-        seed=seed, dom=POWERBALL, batch_disjoint=batch_disjoint,
-        howard_mode=howard_mode, max_periods=max_periods, signal_params=sp,
     )
 
 
@@ -604,10 +582,10 @@ def render(sample_csv_path: Path) -> None:
     with st.expander("🔮 回測(依現在策略每期重選,比對歷史開獎)", expanded=False):
         backtest_panel(
             key_prefix="pb", show_howard=False,
-            run=lambda c: _bt_run(
-                str(sample_csv_path), c["num_tickets"], c["max_periods"],
-                c["lookback"], c["batch_disjoint"], c["howard_mode"],
-                hot_sigma, cold_sigma, sma_window, range_pad,
+            run=lambda c: run_backtest_cached(
+                str(sample_csv_path), "powerball", c["num_tickets"],
+                c["max_periods"], c["lookback"], c["batch_disjoint"],
+                c["howard_mode"], hot_sigma, cold_sigma, sma_window, range_pad,
                 overheat_recent, overheat_min, dormant_periods, c["seed"],
             ),
         )
