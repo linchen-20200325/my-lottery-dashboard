@@ -121,6 +121,9 @@ my-lottery-2026/
 - [x] **Part 1 `analytics/backtest.py` 擴充 + `test_backtest.py`**:`backtest()` 加 `batch_disjoint` / `howard_mode`(僅大樂透) / `max_periods`(限最近 N 期) / `signal_params`(透傳訊號參數)參數;`_generate_for` dispatch 透傳選項;新增「每期最佳一注命中分佈」(`draws_hit_distribution`)+ `periods_requested`;CLI 加 `--max-periods/--batch-disjoint/--howard`。lookahead 護網不變(`_assert_newest_first` + `rows[k+1:]`);威力彩仍 payout=None(§1)。test_backtest 4→8 測試、憲法 7/7。
 - [x] **Part 2 `ui/_widgets.py` + 兩 view**:`_widgets.backtest_panel`(SSOT 共用面板:幾組/不重複/霍華德(僅大樂透)/期數 5-100/lookback + 執行鈕 + 結果渲染)+ **`run_backtest_cached`(單一 cached 執行,以樂透別 str 當 key 解析 dom;兩 view 共用,消除各自 `_bt_run` 重複 → SSOT)**;兩 view 主面板加 always-on「🔮 回測」expander(獨立於產生鈕),綁定當前訊號參數 + 樂透別。結果顯示每期最佳命中 / ≥3 命中率 / 每注命中分佈 /(大樂透)名目 ROI + 免責。ui_smoke 執行 stub 實跑 render(含真的跑回測)無錯、widget key 不衝突;286 tests、憲法 7/7、golden MATCH。
 
+## 回測 UI 清晰化(v6.25.1)
+- [x] **`backtest.py` + `_widgets.py` + `test_backtest.py`**:回應使用者「看不出每期是否重選 / seed 是什麼」。① 面板開頭 caption 明講「**每一期都重新選號(不是固定一組)**」;② seed 加 help(可重現 + 公平比較用);③ `backtest()` 多回傳 `sample`(最新一期實際選出的 ≤5 注 + 開獎 + 命中),UI 秀出來讓使用者眼見每期重選;test_backtest +1(sample 結構)。
+
 ## 深層拔毒 Phase 3 — domain.py 升真 SSOT + 死碼清除(v6.24,進行中)
 > 依《深層毒素稽核報告》同意藍圖:T1(domain 真 SSOT)→ T4(小修/死碼)→ T2(B5 UI)→ T3(B6)。一次一檔、golden 守、per-file commit。
 - [x] **T1-a `history_engine.py`**:刪自刻 `POOL/DEFAULTS/STATIC_SUM`(1,49 / DEFAULTS dict / 120,180)→ import `domain.LOTTO649`;消費端名稱不變、值由 test_domain 對帳;golden 全 seed MATCH、43 測試綠。解 S1 影子 SSOT(大樂透側)。

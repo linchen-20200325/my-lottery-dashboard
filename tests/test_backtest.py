@@ -98,6 +98,24 @@ class TestBacktestOptions(unittest.TestCase):
         finally:
             p.unlink()
 
+    def test_sample_of_generated_tickets(self):
+        # result 帶「最新一期實際選出的注」範例(讓 UI 眼見每期重選號)
+        p = _make_csv(LOTTO649, n=60)
+        try:
+            r = backtest(p, tickets_per_draw=4, lookback=20, seed=1,
+                         dom=LOTTO649, max_periods=10)
+            sample = r["sample"]
+            self.assertIsInstance(sample, dict)
+            self.assertEqual(len(sample["target"]), 6)
+            self.assertGreaterEqual(len(sample["tickets"]), 1)
+            self.assertLessEqual(len(sample["tickets"]), 5)
+            self.assertEqual(len(sample["tickets"]), len(sample["hits"]))
+            for t, h in zip(sample["tickets"], sample["hits"]):
+                self.assertEqual(len(t), 6)
+                self.assertEqual(h, len(set(t) & set(sample["target"])))
+        finally:
+            p.unlink()
+
     def test_powerball_ignores_howard_no_crash(self):
         p = _make_csv(POWERBALL, n=50)
         try:
